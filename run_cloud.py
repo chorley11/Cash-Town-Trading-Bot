@@ -144,12 +144,9 @@ class CloudRunner:
             kucoin = KuCoinFuturesExecutor()
             
             risk_config = RiskConfig(
-                max_position_size_pct=5.0,
+                max_position_pct=5.0,
                 max_total_exposure_pct=30.0,
-                max_daily_loss_pct=3.0,
-                max_single_loss_pct=1.0,
-                min_confidence=0.6,
-                require_stop_loss=True
+                max_daily_loss_pct=3.0
             )
             
             engine = ExecutionEngine(
