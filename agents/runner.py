@@ -38,7 +38,7 @@ class AgentRunner:
     Reports signals to the orchestrator.
     """
     
-    ORCHESTRATOR_URL = "http://localhost:8888"
+    ORCHESTRATOR_URL = os.environ.get('ORCHESTRATOR_URL', f"http://localhost:{os.environ.get('PORT', '8888')}")
     
     def __init__(self, strategy_id: str, symbols: list = None, interval_seconds: int = 300):
         self.strategy_id = strategy_id
