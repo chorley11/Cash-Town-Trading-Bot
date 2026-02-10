@@ -311,6 +311,21 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json({'error': str(e)})
         
+        elif path == '/vault/positions':
+            # Serve positions from Obsidian vault
+            positions = self._load_vault_positions()
+            self._send_json(positions)
+        
+        elif path == '/vault/summary':
+            # Serve summary from Obsidian vault
+            summary = self._load_vault_summary()
+            self._send_json(summary)
+        
+        elif path == '/vault/strategies':
+            # Serve strategy performance from Obsidian vault
+            strategies = self._load_vault_strategies()
+            self._send_json(strategies)
+        
         elif path == '/' or path == '/dashboard' or path.startswith('/dashboard/'):
             # Serve dashboard
             self._serve_dashboard(path)
@@ -594,6 +609,131 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
                 if strat.lower() in part.lower():
                     return part
         return 'unknown'
+    
+    def _load_vault_positions(self) -> dict:
+        """Load current positions from Obsidian vault"""
+        import os
+        import re
+        from pathlib import Path
+        
+        vault_path = Path(os.path.expanduser("~/.openclaw/workspace/vault/trading/positions.md"))
+        if not vault_path.exists():
+            return {'positions': [], 'summary': {}}
+        
+        positions = []
+        summary = {'open_positions': 0, 'total_value': 0, 'unrealized_pnl': 0}
+        
+        try:
+            content = vault_path.read_text()
+            lines = content.split('\n')
+            
+            for line in lines:
+                if '|' not in line or '---' in line or 'Symbol' in line or 'Metric' in line:
+                    continue
+                
+                # Parse summary row
+                if 'Open Positions' in line:
+                    summary['open_positions'] = int(self._extract_number(line))
+                elif 'Total Value' in line:
+                    summary['total_value'] = self._extract_number(line)
+                elif 'Unrealized PnL' in line:
+                    summary['unrealized_pnl'] = self._extract_number(line)
+                # Parse position row: | Symbol | Side | Entry | Current | Size | Value | PnL | PnL% | Strategy |
+                elif '/USDT' in line.upper() or '/USD' in line.upper():
+                    parts = [p.strip() for p in line.split('|') if p.strip()]
+                    if len(parts) >= 8:
+                        positions.append({
+                            'symbol': parts[0],
+                            'side': 'long' if 'LONG' in parts[1].upper() else 'short',
+                            'entry_price': self._extract_number(parts[2]),
+                            'current_price': self._extract_number(parts[3]),
+                            'size': self._extract_number(parts[4]),
+                            'value': self._extract_number(parts[5]),
+                            'pnl': self._extract_number(parts[6]),
+                            'pnl_pct': parts[7],
+                            'strategy': parts[8] if len(parts) > 8 else 'unknown'
+                        })
+        except Exception as e:
+            logger.debug(f"Error loading positions: {e}")
+        
+        return {'positions': positions, 'summary': summary}
+    
+    def _load_vault_summary(self) -> dict:
+        """Load account summary from Obsidian vault"""
+        import os
+        from pathlib import Path
+        
+        vault_path = Path(os.path.expanduser("~/.openclaw/workspace/vault/trading/summary.md"))
+        if not vault_path.exists():
+            return {}
+        
+        summary = {
+            'equity': 0,
+            'total_trades': 0,
+            'wins': 0,
+            'losses': 0,
+            'win_rate': 0,
+            'total_pnl': 0
+        }
+        
+        try:
+            content = vault_path.read_text()
+            for line in content.split('\n'):
+                if 'Total Trades' in line:
+                    summary['total_trades'] = int(self._extract_number(line))
+                elif 'Win / Loss' in line:
+                    parts = line.split('/')
+                    if len(parts) >= 2:
+                        summary['wins'] = int(self._extract_number(parts[0]))
+                        summary['losses'] = int(self._extract_number(parts[1]))
+                elif 'Win Rate' in line:
+                    summary['win_rate'] = self._extract_number(line)
+                elif 'Total PnL' in line:
+                    summary['total_pnl'] = self._extract_number(line)
+                elif 'Equity' in line:
+                    summary['equity'] = self._extract_number(line)
+        except Exception as e:
+            logger.debug(f"Error loading summary: {e}")
+        
+        return summary
+    
+    def _load_vault_strategies(self) -> list:
+        """Load strategy performance from Obsidian vault"""
+        import os
+        from pathlib import Path
+        
+        vault_path = Path(os.path.expanduser("~/.openclaw/workspace/vault/trading/summary.md"))
+        if not vault_path.exists():
+            return []
+        
+        strategies = []
+        try:
+            content = vault_path.read_text()
+            in_strategy_table = False
+            
+            for line in content.split('\n'):
+                if 'Strategy Performance' in line:
+                    in_strategy_table = True
+                    continue
+                
+                if in_strategy_table and '|' in line and '---' not in line and 'Strategy' not in line:
+                    parts = [p.strip() for p in line.split('|') if p.strip()]
+                    if len(parts) >= 5:
+                        strategies.append({
+                            'name': parts[0],
+                            'trades': int(self._extract_number(parts[1])),
+                            'wins': int(self._extract_number(parts[2])),
+                            'win_rate': self._extract_number(parts[3]),
+                            'pnl': self._extract_number(parts[4])
+                        })
+                
+                # Stop at next section
+                if in_strategy_table and line.startswith('## ') and 'Strategy' not in line:
+                    break
+        except Exception as e:
+            logger.debug(f"Error loading strategies: {e}")
+        
+        return strategies
     
     def log_message(self, format, *args):
         logger.info(f"{self.address_string()} - {format % args}")
