@@ -232,6 +232,12 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
         body = self.rfile.read(content_length)
         return json.loads(body.decode())
     
+    def _read_body_raw(self) -> str:
+        content_length = int(self.headers.get('Content-Length', 0))
+        if content_length == 0:
+            return ''
+        return self.rfile.read(content_length).decode()
+    
     def do_OPTIONS(self):
         """Handle CORS preflight"""
         self.send_response(200)
@@ -320,6 +326,10 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
                     self._send_json({'error': f'Cucurbit returned {resp.status_code}'})
             except Exception as e:
                 self._send_json({'error': str(e)})
+        
+        elif path.startswith('/cucurbit/'):
+            # Proxy any Cucurbit endpoint with auth
+            self._proxy_cucurbit(path.replace('/cucurbit', ''), 'GET')
         
         elif path == '/vault/positions':
             # Serve positions from Obsidian vault
@@ -496,6 +506,11 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
             else:
                 self._send_error('Agent not found', 404)
         
+        elif path.startswith('/cucurbit/'):
+            # Proxy POST to Cucurbit
+            body = self._read_body_raw()
+            self._proxy_cucurbit(path.replace('/cucurbit', ''), 'POST', body)
+        
         else:
             self._send_error('Not found', 404)
     
@@ -528,6 +543,11 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_error(str(e))
         
+        elif path.startswith('/cucurbit/'):
+            # Proxy PATCH to Cucurbit
+            body = self._read_body_raw()
+            self._proxy_cucurbit(path.replace('/cucurbit', ''), 'PATCH', body)
+        
         else:
             self._send_error('Not found', 404)
     
@@ -542,6 +562,11 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
                 self._send_json({'success': True})
             else:
                 self._send_error('Agent not found', 404)
+        
+        elif path.startswith('/cucurbit/'):
+            # Proxy DELETE to Cucurbit
+            self._proxy_cucurbit(path.replace('/cucurbit', ''), 'DELETE')
+        
         else:
             self._send_error('Not found', 404)
     
@@ -744,6 +769,33 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
             logger.debug(f"Error loading strategies: {e}")
         
         return strategies
+    
+    def _proxy_cucurbit(self, endpoint: str, method: str = 'GET', body: str = None):
+        """Proxy request to Cucurbit API with authentication"""
+        import requests as req
+        api_key = os.environ.get('CUCURBIT_API_KEY', '')
+        headers = {'Authorization': f'Bearer {api_key}'} if api_key else {}
+        
+        try:
+            url = f'https://autonomous-trading-cex-production.up.railway.app{endpoint}'
+            if method == 'GET':
+                resp = req.get(url, headers=headers, timeout=30)
+            elif method == 'POST':
+                resp = req.post(url, headers=headers, json=json.loads(body) if body else None, timeout=30)
+            elif method == 'DELETE':
+                resp = req.delete(url, headers=headers, timeout=30)
+            elif method == 'PATCH':
+                resp = req.patch(url, headers=headers, json=json.loads(body) if body else None, timeout=30)
+            else:
+                self._send_error('Method not allowed', 405)
+                return
+            
+            if resp.status_code == 200 or resp.status_code == 201:
+                self._send_json(resp.json())
+            else:
+                self._send_json({'error': f'Cucurbit returned {resp.status_code}', 'details': resp.text[:500]})
+        except Exception as e:
+            self._send_json({'error': str(e)})
     
     def log_message(self, format, *args):
         logger.info(f"{self.address_string()} - {format % args}")

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>💰 Cash Town Dashboard</title>
+    <title>💰 Cash Town + Cucurbit</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
@@ -11,367 +11,478 @@
         .card { background: #1a1a2e; border-radius: 12px; border: 1px solid #2a2a4a; }
         .positive { color: #22c55e; }
         .negative { color: #ef4444; }
-        .neutral { color: #94a3b8; }
+        .tab { cursor: pointer; padding: 0.5rem 1rem; border-radius: 8px; }
+        .tab.active { background: #2a2a4a; }
+        .tab:hover { background: #252540; }
         .scrollable { max-height: 400px; overflow-y: auto; }
+        .btn { padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer; transition: all 0.2s; }
+        .btn-primary { background: #3b82f6; color: white; }
+        .btn-primary:hover { background: #2563eb; }
+        .btn-danger { background: #ef4444; color: white; }
+        .btn-danger:hover { background: #dc2626; }
+        .btn-success { background: #22c55e; color: white; }
+        .btn-success:hover { background: #16a34a; }
     </style>
 </head>
-<body class="min-h-screen p-4 md:p-6">
+<body class="min-h-screen p-4">
     <div class="max-w-7xl mx-auto">
         <!-- Header -->
-        <div class="flex justify-between items-center mb-6">
+        <div class="flex justify-between items-center mb-4">
             <div>
-                <h1 class="text-2xl md:text-3xl font-bold">💰 Cash Town + Cucurbit</h1>
-                <p class="text-gray-400 text-sm">Unified Trading Dashboard</p>
+                <h1 class="text-2xl font-bold">💰 Cash Town + Cucurbit</h1>
+                <p class="text-gray-400 text-sm" id="status">Loading...</p>
             </div>
-            <div class="text-right">
-                <div id="status" class="text-lg font-semibold">Loading...</div>
-                <div id="last-update" class="text-sm text-gray-400"></div>
-            </div>
-        </div>
-
-        <!-- Summary Cards -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
-            <div class="card p-4">
-                <div class="text-gray-400 text-xs mb-1">Total PnL</div>
-                <div id="total-pnl" class="text-2xl font-bold">$0.00</div>
-                <div id="total-trades" class="text-xs text-gray-400">0 trades</div>
-            </div>
-            <div class="card p-4">
-                <div class="text-gray-400 text-xs mb-1">Open Positions</div>
-                <div id="open-positions" class="text-2xl font-bold">0</div>
-                <div id="unrealized-pnl" class="text-xs text-gray-400">$0.00 unrealized</div>
-            </div>
-            <div class="card p-4">
-                <div class="text-gray-400 text-xs mb-1">Win Rate</div>
-                <div id="win-rate" class="text-2xl font-bold">0%</div>
-                <div id="win-loss" class="text-xs text-gray-400">0W / 0L</div>
-            </div>
-            <div class="card p-4">
-                <div class="text-gray-400 text-xs mb-1">Today's PnL</div>
-                <div id="today-pnl" class="text-2xl font-bold">$0.00</div>
-                <div id="today-trades" class="text-xs text-gray-400">0 trades today</div>
+            <div class="flex gap-2">
+                <button class="btn btn-success text-sm" onclick="startTrading()">▶ Start</button>
+                <button class="btn btn-danger text-sm" onclick="stopTrading()">⏹ Stop</button>
+                <button class="btn btn-primary text-sm" onclick="syncPositions()">🔄 Sync</button>
             </div>
         </div>
 
-        <!-- Main Grid -->
-        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
-            <!-- Open Positions -->
-            <div class="card p-4">
-                <h2 class="text-lg font-bold mb-3">📊 Open Positions</h2>
-                <div id="positions-container" class="scrollable">
-                    <table class="w-full text-sm">
-                        <thead class="text-gray-400 text-left">
-                            <tr>
-                                <th class="pb-2">Symbol</th>
-                                <th class="pb-2">Side</th>
-                                <th class="pb-2 text-right">Entry</th>
-                                <th class="pb-2 text-right">Current</th>
-                                <th class="pb-2 text-right">PnL</th>
-                            </tr>
-                        </thead>
-                        <tbody id="positions-table">
-                            <tr><td colspan="5" class="text-gray-500 py-4 text-center">Loading...</td></tr>
-                        </tbody>
-                    </table>
+        <!-- Tabs -->
+        <div class="flex gap-2 mb-4 border-b border-gray-700 pb-2">
+            <div class="tab active" onclick="showTab('overview')" id="tab-overview">📊 Overview</div>
+            <div class="tab" onclick="showTab('positions')" id="tab-positions">📈 Positions</div>
+            <div class="tab" onclick="showTab('trades')" id="tab-trades">📜 Trades</div>
+            <div class="tab" onclick="showTab('risk')" id="tab-risk">⚠️ Risk</div>
+            <div class="tab" onclick="showTab('strategies')" id="tab-strategies">🎯 Strategies</div>
+        </div>
+
+        <!-- Overview Tab -->
+        <div id="panel-overview">
+            <!-- Summary Cards -->
+            <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+                <div class="card p-4">
+                    <div class="text-gray-400 text-xs">Total PnL</div>
+                    <div id="total-pnl" class="text-xl font-bold">$0.00</div>
+                </div>
+                <div class="card p-4">
+                    <div class="text-gray-400 text-xs">Open Positions</div>
+                    <div id="open-positions" class="text-xl font-bold">0</div>
+                </div>
+                <div class="card p-4">
+                    <div class="text-gray-400 text-xs">Win Rate</div>
+                    <div id="win-rate" class="text-xl font-bold">0%</div>
+                </div>
+                <div class="card p-4">
+                    <div class="text-gray-400 text-xs">Total Trades</div>
+                    <div id="total-trades" class="text-xl font-bold">0</div>
+                </div>
+                <div class="card p-4">
+                    <div class="text-gray-400 text-xs">Balance</div>
+                    <div id="balance" class="text-xl font-bold">$0.00</div>
                 </div>
             </div>
 
-            <!-- Strategy Performance -->
+            <!-- Chart + Strategy Stats -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+                <div class="card p-4">
+                    <h3 class="font-bold mb-2">📈 PnL Chart</h3>
+                    <canvas id="pnl-chart" height="150"></canvas>
+                </div>
+                <div class="card p-4">
+                    <h3 class="font-bold mb-2">🎯 Strategy Performance</h3>
+                    <div id="strategy-stats" class="space-y-2 scrollable"></div>
+                </div>
+            </div>
+
+            <!-- Quick Positions -->
             <div class="card p-4">
-                <h2 class="text-lg font-bold mb-3">🎯 Strategy Performance</h2>
-                <div id="strategies-container" class="scrollable">
-                    <table class="w-full text-sm">
-                        <thead class="text-gray-400 text-left">
-                            <tr>
-                                <th class="pb-2">Strategy</th>
-                                <th class="pb-2 text-right">Trades</th>
-                                <th class="pb-2 text-right">Win%</th>
-                                <th class="pb-2 text-right">PnL</th>
-                            </tr>
-                        </thead>
-                        <tbody id="strategies-table">
-                            <tr><td colspan="4" class="text-gray-500 py-4 text-center">Loading...</td></tr>
-                        </tbody>
-                    </table>
+                <h3 class="font-bold mb-2">📊 Open Positions</h3>
+                <div id="positions-quick" class="overflow-x-auto"></div>
+            </div>
+        </div>
+
+        <!-- Positions Tab -->
+        <div id="panel-positions" class="hidden">
+            <div class="card p-4 mb-4">
+                <h3 class="font-bold mb-3">Open Position</h3>
+                <div class="grid grid-cols-2 md:grid-cols-5 gap-2">
+                    <input type="text" id="new-symbol" placeholder="BTC/USDT" class="bg-gray-800 border border-gray-700 rounded p-2 text-sm">
+                    <select id="new-side" class="bg-gray-800 border border-gray-700 rounded p-2 text-sm">
+                        <option value="long">Long</option>
+                        <option value="short">Short</option>
+                    </select>
+                    <input type="number" id="new-size" placeholder="Size USD" class="bg-gray-800 border border-gray-700 rounded p-2 text-sm">
+                    <input type="number" id="new-sl" placeholder="Stop Loss %" class="bg-gray-800 border border-gray-700 rounded p-2 text-sm">
+                    <button class="btn btn-primary text-sm" onclick="openPosition()">Open</button>
+                </div>
+            </div>
+            <div class="card p-4">
+                <h3 class="font-bold mb-2">All Positions</h3>
+                <div id="positions-full" class="overflow-x-auto scrollable"></div>
+            </div>
+        </div>
+
+        <!-- Trades Tab -->
+        <div id="panel-trades" class="hidden">
+            <div class="card p-4 mb-4">
+                <div class="flex justify-between items-center mb-3">
+                    <h3 class="font-bold">Trade History</h3>
+                    <button class="btn btn-primary text-sm" onclick="downloadCSV()">📥 Download CSV</button>
+                </div>
+                <div id="trades-table" class="overflow-x-auto scrollable"></div>
+            </div>
+        </div>
+
+        <!-- Risk Tab -->
+        <div id="panel-risk" class="hidden">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="card p-4">
+                    <h3 class="font-bold mb-3">Risk Profile</h3>
+                    <div id="risk-profile" class="space-y-2"></div>
+                    <div class="mt-4">
+                        <label class="text-sm text-gray-400">Change Profile:</label>
+                        <select id="profile-select" class="bg-gray-800 border border-gray-700 rounded p-2 text-sm w-full mt-1" onchange="changeProfile()">
+                        </select>
+                    </div>
+                </div>
+                <div class="card p-4">
+                    <h3 class="font-bold mb-3">Risk State</h3>
+                    <div id="risk-state" class="space-y-2"></div>
                 </div>
             </div>
         </div>
 
-        <!-- Recent Trades -->
-        <div class="card p-4 mb-6">
-            <h2 class="text-lg font-bold mb-3">📜 Recent Trades</h2>
-            <div class="scrollable">
-                <table class="w-full text-sm">
-                    <thead class="text-gray-400 text-left">
-                        <tr>
-                            <th class="pb-2">Time</th>
-                            <th class="pb-2">Symbol</th>
-                            <th class="pb-2">Side</th>
-                            <th class="pb-2">Strategy</th>
-                            <th class="pb-2 text-right">Entry</th>
-                            <th class="pb-2 text-right">Exit</th>
-                            <th class="pb-2 text-right">PnL</th>
-                            <th class="pb-2">Reason</th>
-                        </tr>
-                    </thead>
-                    <tbody id="trades-table">
-                        <tr><td colspan="8" class="text-gray-500 py-4 text-center">Loading...</td></tr>
-                    </tbody>
-                </table>
+        <!-- Strategies Tab -->
+        <div id="panel-strategies" class="hidden">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="card p-4">
+                    <h3 class="font-bold mb-3">Strategy Weights</h3>
+                    <div id="strategy-weights" class="space-y-2"></div>
+                    <button class="btn btn-danger text-sm mt-4" onclick="clearWeights()">Clear All Weights</button>
+                </div>
+                <div class="card p-4">
+                    <h3 class="font-bold mb-3">Recent Signals</h3>
+                    <div id="signals-list" class="space-y-2 scrollable"></div>
+                </div>
             </div>
-        </div>
-
-        <!-- Live Cucurbit Strategy Stats -->
-        <div class="card p-4 mb-6">
-            <h2 class="text-lg font-bold mb-3">🤖 Live Strategy Status (Cucurbit)</h2>
-            <div id="live-strategies" class="grid grid-cols-2 md:grid-cols-4 gap-3">
-                <div class="text-gray-500 text-center py-4">Loading...</div>
-            </div>
-        </div>
-
-        <!-- PnL Chart -->
-        <div class="card p-4">
-            <h2 class="text-lg font-bold mb-3">📈 Cumulative PnL</h2>
-            <canvas id="pnl-chart" height="80"></canvas>
         </div>
     </div>
 
     <script>
-        const CASHTOWN_API = new URLSearchParams(window.location.search).get('api') 
+        const API = new URLSearchParams(window.location.search).get('api') 
             || (window.location.hostname === 'localhost' ? 'http://localhost:8888' : 'https://web-production-63664b.up.railway.app');
         
         let pnlChart = null;
+        let currentTab = 'overview';
 
-        async function fetchAll() {
-            document.getElementById('last-update').textContent = `Updating...`;
+        // Tab switching
+        function showTab(tab) {
+            document.querySelectorAll('[id^="panel-"]').forEach(p => p.classList.add('hidden'));
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.getElementById(`panel-${tab}`).classList.remove('hidden');
+            document.getElementById(`tab-${tab}`).classList.add('active');
+            currentTab = tab;
+            refresh();
+        }
+
+        // Trading controls
+        async function startTrading() {
+            if (!confirm('Start trading?')) return;
+            try {
+                await fetch(`${API}/cucurbit/trading/start`, {method: 'POST'});
+                showToast('Trading started');
+                refresh();
+            } catch (e) { showToast('Error: ' + e.message, true); }
+        }
+
+        async function stopTrading() {
+            if (!confirm('Stop trading?')) return;
+            try {
+                await fetch(`${API}/cucurbit/trading/stop`, {method: 'POST'});
+                showToast('Trading stopped');
+                refresh();
+            } catch (e) { showToast('Error: ' + e.message, true); }
+        }
+
+        async function syncPositions() {
+            try {
+                await fetch(`${API}/cucurbit/sync-positions`, {method: 'POST'});
+                showToast('Positions synced');
+                refresh();
+            } catch (e) { showToast('Error: ' + e.message, true); }
+        }
+
+        // Position management
+        async function openPosition() {
+            const symbol = document.getElementById('new-symbol').value;
+            const side = document.getElementById('new-side').value;
+            const sizeUsd = parseFloat(document.getElementById('new-size').value);
+            const stopLoss = parseFloat(document.getElementById('new-sl').value) || undefined;
             
-            // Fetch all data in parallel
-            const [summaryRes, positionsRes, tradesRes, strategiesRes, cucurbitRes] = await Promise.allSettled([
-                fetch(`${CASHTOWN_API}/vault/summary`),
-                fetch(`${CASHTOWN_API}/vault/positions`),
-                fetch(`${CASHTOWN_API}/trades`),
-                fetch(`${CASHTOWN_API}/vault/strategies`),
-                fetch(`${CASHTOWN_API}/cucurbit`)
-            ]);
+            if (!symbol || !sizeUsd) { showToast('Fill in symbol and size', true); return; }
             
-            // Process summary
-            if (summaryRes.status === 'fulfilled') {
-                const summary = await summaryRes.value.json();
-                updateSummary(summary);
-            }
-            
-            // Process positions
-            if (positionsRes.status === 'fulfilled') {
-                const data = await positionsRes.value.json();
-                updatePositions(data);
-            }
-            
-            // Process trades
-            if (tradesRes.status === 'fulfilled') {
-                const trades = await tradesRes.value.json();
-                updateTrades(trades);
-            }
-            
-            // Process strategies (from vault)
-            if (strategiesRes.status === 'fulfilled') {
-                const strategies = await strategiesRes.value.json();
-                updateStrategies(strategies);
-            }
-            
-            // Process live Cucurbit data
-            if (cucurbitRes.status === 'fulfilled') {
-                const cucurbit = await cucurbitRes.value.json();
-                if (!cucurbit.error) {
-                    updateLiveCucurbit(cucurbit);
+            try {
+                const resp = await fetch(`${API}/cucurbit/positions`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({symbol, side, sizeUsd, stopLoss})
+                });
+                const data = await resp.json();
+                if (data.success) {
+                    showToast('Position opened');
+                    refresh();
+                } else {
+                    showToast('Error: ' + data.error, true);
                 }
+            } catch (e) { showToast('Error: ' + e.message, true); }
+        }
+
+        async function closePosition(id) {
+            if (!confirm('Close this position?')) return;
+            try {
+                const resp = await fetch(`${API}/cucurbit/positions/${id}`, {method: 'DELETE'});
+                const data = await resp.json();
+                showToast(data.success ? 'Position closed' : 'Error: ' + data.error, !data.success);
+                refresh();
+            } catch (e) { showToast('Error: ' + e.message, true); }
+        }
+
+        // Risk management
+        async function changeProfile() {
+            const profile = document.getElementById('profile-select').value;
+            try {
+                await fetch(`${API}/cucurbit/risk-profile`, {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({profile})
+                });
+                showToast('Profile changed to ' + profile);
+                refresh();
+            } catch (e) { showToast('Error: ' + e.message, true); }
+        }
+
+        async function clearWeights() {
+            if (!confirm('Clear all strategy weights?')) return;
+            try {
+                await fetch(`${API}/cucurbit/weights`, {method: 'DELETE'});
+                showToast('Weights cleared');
+                refresh();
+            } catch (e) { showToast('Error: ' + e.message, true); }
+        }
+
+        function downloadCSV() {
+            window.open(`${API}/cucurbit/trades/csv`, '_blank');
+        }
+
+        // Data fetching
+        async function refresh() {
+            try {
+                // Fetch Cucurbit health data
+                const healthRes = await fetch(`${API}/cucurbit`);
+                const health = await healthRes.json();
+                updateHealth(health);
+
+                // Fetch positions
+                const posRes = await fetch(`${API}/cucurbit/positions`);
+                const posData = await posRes.json();
+                updatePositions(posData.positions || []);
+
+                // Fetch trades
+                const tradesRes = await fetch(`${API}/cucurbit/trades`);
+                const tradesData = await tradesRes.json();
+                updateTrades(tradesData);
+
+                // Fetch risk profile
+                const riskRes = await fetch(`${API}/cucurbit/risk-profile`);
+                const riskData = await riskRes.json();
+                updateRisk(riskData);
+
+                // Fetch signals
+                const sigRes = await fetch(`${API}/cucurbit/signals?limit=20`);
+                const sigData = await sigRes.json();
+                updateSignals(sigData.signals || []);
+
+                // Fetch weights
+                const weightsRes = await fetch(`${API}/cucurbit/weights`);
+                const weightsData = await weightsRes.json();
+                updateWeights(weightsData.weights || {});
+
+                // Fetch balances
+                const balRes = await fetch(`${API}/cucurbit/balances`);
+                const balData = await balRes.json();
+                if (balData.balances) {
+                    const equity = balData.balances.USDT_EQUITY || balData.balances.accountEquity || 0;
+                    document.getElementById('balance').textContent = `$${equity.toFixed(2)}`;
+                }
+
+                document.getElementById('status').textContent = `🟢 Connected • Updated ${new Date().toLocaleTimeString()}`;
+            } catch (e) {
+                console.error('Refresh error:', e);
+                document.getElementById('status').textContent = '🔴 Connection error';
             }
-            
-            document.getElementById('status').textContent = '🟢 Connected';
-            document.getElementById('last-update').textContent = `Updated: ${new Date().toLocaleTimeString()}`;
         }
-        
-        function updateSummary(summary) {
-            const totalPnl = summary.total_pnl || 0;
+
+        function updateHealth(data) {
+            const trading = data.trading || {};
+            const strategies = trading.strategyMetrics || [];
+            
+            document.getElementById('open-positions').textContent = trading.total_positions || 0;
+            
+            let totalPnl = 0, totalTrades = 0, wins = 0;
+            strategies.forEach(s => {
+                totalPnl += s.totalPnl || 0;
+                totalTrades += s.totalTrades || 0;
+                wins += s.winningTrades || 0;
+            });
+            
             document.getElementById('total-pnl').textContent = `$${totalPnl.toFixed(2)}`;
-            document.getElementById('total-pnl').className = `text-2xl font-bold ${totalPnl >= 0 ? 'positive' : 'negative'}`;
-            document.getElementById('total-trades').textContent = `${summary.total_trades || 0} trades`;
+            document.getElementById('total-pnl').className = `text-xl font-bold ${totalPnl >= 0 ? 'positive' : 'negative'}`;
+            document.getElementById('total-trades').textContent = totalTrades;
+            document.getElementById('win-rate').textContent = totalTrades > 0 ? `${(wins/totalTrades*100).toFixed(1)}%` : '0%';
             
-            const winRate = summary.win_rate || 0;
-            document.getElementById('win-rate').textContent = `${winRate.toFixed(1)}%`;
-            document.getElementById('win-loss').textContent = `${summary.wins || 0}W / ${summary.losses || 0}L`;
+            // Strategy stats
+            const statsHtml = strategies.map(s => `
+                <div class="flex justify-between items-center p-2 bg-gray-800/50 rounded">
+                    <div>
+                        <span class="${s.status === 'active' ? 'text-green-400' : 'text-red-400'}">●</span>
+                        <span class="ml-2">${s.name}</span>
+                    </div>
+                    <div class="text-right">
+                        <span class="${s.totalPnl >= 0 ? 'positive' : 'negative'}">$${(s.totalPnl || 0).toFixed(2)}</span>
+                        <span class="text-gray-400 text-xs ml-2">${s.totalTrades || 0} trades</span>
+                    </div>
+                </div>
+            `).join('');
+            document.getElementById('strategy-stats').innerHTML = statsHtml || '<div class="text-gray-500">No strategy data</div>';
         }
-        
-        function updatePositions(data) {
-            const positions = data.positions || [];
-            const summary = data.summary || {};
-            
-            document.getElementById('open-positions').textContent = positions.length || summary.open_positions || 0;
-            
-            const unrealized = summary.unrealized_pnl || 0;
-            document.getElementById('unrealized-pnl').textContent = `$${unrealized.toFixed(2)} unrealized`;
-            document.getElementById('unrealized-pnl').className = `text-xs ${unrealized >= 0 ? 'positive' : 'negative'}`;
-            
-            const table = document.getElementById('positions-table');
-            if (positions.length > 0) {
-                table.innerHTML = positions.map(p => {
-                    const pnlClass = p.pnl >= 0 ? 'positive' : 'negative';
-                    const sideClass = p.side === 'long' ? 'positive' : 'negative';
-                    return `
+
+        function updatePositions(positions) {
+            const html = positions.length ? `
+                <table class="w-full text-sm">
+                    <thead><tr class="text-gray-400 text-left">
+                        <th class="pb-2">Symbol</th><th>Side</th><th>Entry</th><th>Current</th><th>PnL</th><th>Strategy</th><th></th>
+                    </tr></thead>
+                    <tbody>${positions.map(p => `
                         <tr class="border-t border-gray-700/50">
                             <td class="py-2 font-medium">${p.symbol}</td>
-                            <td class="${sideClass}">${p.side.toUpperCase()}</td>
-                            <td class="text-right">$${p.entry_price?.toFixed(4) || '0'}</td>
-                            <td class="text-right">$${p.current_price?.toFixed(4) || '0'}</td>
-                            <td class="text-right ${pnlClass}">$${p.pnl?.toFixed(2) || '0'}</td>
+                            <td class="${p.side === 'long' ? 'positive' : 'negative'}">${p.side?.toUpperCase()}</td>
+                            <td>$${p.entryPrice?.toFixed(4) || '?'}</td>
+                            <td>$${p.currentPrice?.toFixed(4) || '?'}</td>
+                            <td class="${(p.unrealizedPnl || 0) >= 0 ? 'positive' : 'negative'}">$${(p.unrealizedPnl || 0).toFixed(2)}</td>
+                            <td class="text-gray-400">${p.strategyId || '?'}</td>
+                            <td><button class="text-red-400 hover:text-red-300" onclick="closePosition('${p.id}')">✕</button></td>
                         </tr>
-                    `;
-                }).join('');
-            } else {
-                table.innerHTML = '<tr><td colspan="5" class="text-gray-500 py-4 text-center">No open positions</td></tr>';
-            }
-        }
-        
-        function updateStrategies(strategies) {
-            const table = document.getElementById('strategies-table');
-            if (strategies && strategies.length > 0) {
-                // Sort by PnL descending
-                strategies.sort((a, b) => (b.pnl || 0) - (a.pnl || 0));
-                
-                table.innerHTML = strategies.map(s => {
-                    const pnlClass = s.pnl >= 0 ? 'positive' : 'negative';
-                    return `
-                        <tr class="border-t border-gray-700/50">
-                            <td class="py-2 font-medium">${s.name}</td>
-                            <td class="text-right">${s.trades || 0}</td>
-                            <td class="text-right">${(s.win_rate || 0).toFixed(1)}%</td>
-                            <td class="text-right ${pnlClass}">$${(s.pnl || 0).toFixed(2)}</td>
-                        </tr>
-                    `;
-                }).join('');
-            } else {
-                table.innerHTML = '<tr><td colspan="4" class="text-gray-500 py-4 text-center">No strategy data</td></tr>';
-            }
-        }
-        
-        function updateTrades(trades) {
-            // Calculate today's PnL
-            const today = new Date().toISOString().split('T')[0];
-            let todayPnl = 0, todayTrades = 0;
+                    `).join('')}</tbody>
+                </table>
+            ` : '<div class="text-gray-500 py-4 text-center">No open positions</div>';
             
-            if (Array.isArray(trades)) {
-                trades.forEach(t => {
-                    if (t.date === today) {
-                        todayPnl += t.pnl || 0;
-                        todayTrades++;
+            document.getElementById('positions-quick').innerHTML = html;
+            document.getElementById('positions-full').innerHTML = html;
+        }
+
+        function updateTrades(data) {
+            const trades = data.trades || [];
+            const summary = data.summary || {};
+            const chartData = data.chartData || [];
+            
+            // Update chart
+            if (chartData.length > 0) {
+                const ctx = document.getElementById('pnl-chart').getContext('2d');
+                if (pnlChart) pnlChart.destroy();
+                pnlChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: chartData.map(d => new Date(d.timestamp * 1000).toLocaleDateString()),
+                        datasets: [{
+                            label: 'Cumulative PnL',
+                            data: chartData.map(d => d.pnl),
+                            borderColor: chartData[chartData.length-1]?.pnl >= 0 ? '#22c55e' : '#ef4444',
+                            tension: 0.3,
+                            fill: false
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        plugins: {legend: {display: false}},
+                        scales: {
+                            y: {grid: {color: '#2a2a4a'}, ticks: {color: '#888'}},
+                            x: {grid: {color: '#2a2a4a'}, ticks: {color: '#888', maxRotation: 45}}
+                        }
                     }
                 });
             }
             
-            document.getElementById('today-pnl').textContent = `$${todayPnl.toFixed(2)}`;
-            document.getElementById('today-pnl').className = `text-2xl font-bold ${todayPnl >= 0 ? 'positive' : 'negative'}`;
-            document.getElementById('today-trades').textContent = `${todayTrades} trades today`;
-            
-            const table = document.getElementById('trades-table');
-            if (Array.isArray(trades) && trades.length > 0) {
-                table.innerHTML = trades.slice(0, 30).map(t => {
-                    const pnlClass = t.pnl >= 0 ? 'positive' : 'negative';
-                    const sideClass = t.side === 'long' ? 'positive' : 'negative';
-                    return `
+            // Trades table
+            const tradesHtml = trades.length ? `
+                <table class="w-full text-sm">
+                    <thead><tr class="text-gray-400 text-left">
+                        <th class="pb-2">Time</th><th>Symbol</th><th>Side</th><th>Strategy</th><th>Entry</th><th>Exit</th><th>PnL</th>
+                    </tr></thead>
+                    <tbody>${trades.slice(0, 50).map(t => `
                         <tr class="border-t border-gray-700/50">
-                            <td class="py-2 text-xs text-gray-400">${t.date} ${t.time}</td>
+                            <td class="py-2 text-xs text-gray-400">${new Date(t.exitTimestamp).toLocaleString()}</td>
                             <td class="font-medium">${t.symbol}</td>
-                            <td class="${sideClass}">${t.side?.toUpperCase() || '?'}</td>
-                            <td class="text-gray-400">${t.strategy || '-'}</td>
-                            <td class="text-right">$${t.entry_price?.toFixed(2) || '0'}</td>
-                            <td class="text-right">$${t.exit_price?.toFixed(2) || '0'}</td>
-                            <td class="text-right ${pnlClass}">$${t.pnl?.toFixed(2) || '0'}</td>
-                            <td class="text-xs text-gray-400">${t.reason || ''}</td>
+                            <td class="${t.side === 'long' ? 'positive' : 'negative'}">${t.side?.toUpperCase()}</td>
+                            <td class="text-gray-400">${t.strategyId || '?'}</td>
+                            <td>$${t.entryPrice?.toFixed(4) || '?'}</td>
+                            <td>$${t.exitPrice?.toFixed(4) || '?'}</td>
+                            <td class="${(t.pnl || 0) >= 0 ? 'positive' : 'negative'}">$${(t.pnl || 0).toFixed(2)}</td>
                         </tr>
-                    `;
-                }).join('');
-                
-                // Update chart
-                updateChart(trades);
-            } else {
-                table.innerHTML = '<tr><td colspan="8" class="text-gray-500 py-4 text-center">No trades</td></tr>';
-            }
+                    `).join('')}</tbody>
+                </table>
+            ` : '<div class="text-gray-500 py-4 text-center">No trades yet</div>';
+            document.getElementById('trades-table').innerHTML = tradesHtml;
         }
-        
-        function updateLiveCucurbit(data) {
-            const trading = data.trading || {};
-            const strategies = trading.strategyMetrics || [];
+
+        function updateRisk(data) {
+            const profileHtml = `
+                <div class="space-y-1 text-sm">
+                    <div class="flex justify-between"><span class="text-gray-400">Current Profile:</span><span class="font-bold">${data.currentProfile || '?'}</span></div>
+                    <div class="flex justify-between"><span class="text-gray-400">Max Position:</span><span>${data.settings?.maxPositionSize || '?'}%</span></div>
+                    <div class="flex justify-between"><span class="text-gray-400">Max Exposure:</span><span>${data.settings?.maxTotalExposure || '?'}%</span></div>
+                    <div class="flex justify-between"><span class="text-gray-400">Daily Loss Limit:</span><span>${data.limits?.dailyLossLimit || '?'}%</span></div>
+                </div>
+            `;
+            document.getElementById('risk-profile').innerHTML = profileHtml;
             
-            const container = document.getElementById('live-strategies');
-            if (strategies.length > 0) {
-                container.innerHTML = strategies.filter(s => s.openPositions > 0 || s.totalTrades > 0).map(s => {
-                    const pnlClass = s.totalPnl >= 0 ? 'positive' : 'negative';
-                    const statusIcon = s.status === 'active' ? '🟢' : '🔴';
-                    return `
-                        <div class="bg-gray-800/50 rounded p-3">
-                            <div class="flex justify-between items-center mb-1">
-                                <span class="font-medium text-sm">${statusIcon} ${s.name}</span>
-                            </div>
-                            <div class="text-xs text-gray-400">
-                                <span>${s.openPositions || 0} positions</span> · 
-                                <span>${s.totalTrades || 0} trades</span>
-                            </div>
-                            <div class="text-sm ${pnlClass} mt-1">$${(s.totalPnl || 0).toFixed(2)}</div>
-                            ${s.lastSignal ? `<div class="text-xs text-gray-500 mt-1 truncate">${s.lastSignal}</div>` : ''}
-                        </div>
-                    `;
-                }).join('') || '<div class="text-gray-500 text-center py-4 col-span-4">No active strategies</div>';
-            }
+            const profiles = data.availableProfiles || [];
+            document.getElementById('profile-select').innerHTML = profiles.map(p => 
+                `<option value="${p}" ${p === data.currentProfile ? 'selected' : ''}>${p}</option>`
+            ).join('');
+            
+            const stateHtml = `
+                <div class="space-y-1 text-sm">
+                    <div class="flex justify-between"><span class="text-gray-400">Can Trade:</span><span class="${data.riskState?.canTrade ? 'positive' : 'negative'}">${data.riskState?.canTrade ? 'Yes' : 'No'}</span></div>
+                    <div class="flex justify-between"><span class="text-gray-400">Daily PnL:</span><span class="${(data.riskState?.dailyPnl || 0) >= 0 ? 'positive' : 'negative'}">$${(data.riskState?.dailyPnl || 0).toFixed(2)}</span></div>
+                    <div class="flex justify-between"><span class="text-gray-400">Open Positions:</span><span>${data.riskState?.openPositionCount || 0}</span></div>
+                    <div class="flex justify-between"><span class="text-gray-400">Total Exposure:</span><span>${(data.riskState?.totalExposure || 0).toFixed(1)}%</span></div>
+                </div>
+            `;
+            document.getElementById('risk-state').innerHTML = stateHtml;
         }
-        
-        function updateChart(trades) {
-            if (!Array.isArray(trades) || trades.length === 0) return;
-            
-            // Group by date
-            const byDate = {};
-            trades.forEach(t => {
-                if (!byDate[t.date]) byDate[t.date] = 0;
-                byDate[t.date] += t.pnl || 0;
-            });
-            
-            const dates = Object.keys(byDate).sort();
-            let cumulative = 0;
-            const cumulativePnl = dates.map(d => {
-                cumulative += byDate[d];
-                return cumulative;
-            });
-            
-            const ctx = document.getElementById('pnl-chart').getContext('2d');
-            if (pnlChart) pnlChart.destroy();
-            
-            pnlChart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: dates,
-                    datasets: [{
-                        label: 'Cumulative PnL',
-                        data: cumulativePnl,
-                        borderColor: cumulativePnl[cumulativePnl.length - 1] >= 0 ? '#22c55e' : '#ef4444',
-                        backgroundColor: 'transparent',
-                        tension: 0.3,
-                        fill: true
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    plugins: { legend: { display: false } },
-                    scales: {
-                        y: { grid: { color: '#2a2a4a' }, ticks: { color: '#888' } },
-                        x: { grid: { color: '#2a2a4a' }, ticks: { color: '#888', maxRotation: 45 } }
-                    }
-                }
-            });
+
+        function updateSignals(signals) {
+            const html = signals.length ? signals.map(s => `
+                <div class="p-2 bg-gray-800/50 rounded text-sm">
+                    <div class="flex justify-between">
+                        <span class="font-medium">${s.symbol}</span>
+                        <span class="${s.side === 'long' ? 'positive' : 'negative'}">${s.side?.toUpperCase()}</span>
+                    </div>
+                    <div class="text-xs text-gray-400">${s.strategyId} • ${new Date(s.timestamp).toLocaleString()}</div>
+                </div>
+            `).join('') : '<div class="text-gray-500">No recent signals</div>';
+            document.getElementById('signals-list').innerHTML = html;
+        }
+
+        function updateWeights(weights) {
+            const entries = Object.entries(weights);
+            const html = entries.length ? entries.map(([k, v]) => `
+                <div class="flex justify-between p-2 bg-gray-800/50 rounded">
+                    <span>${k}</span><span>${v}</span>
+                </div>
+            `).join('') : '<div class="text-gray-500">No active weights</div>';
+            document.getElementById('strategy-weights').innerHTML = html;
+        }
+
+        function showToast(msg, isError = false) {
+            alert(msg); // Simple alert for now
         }
 
         // Initial load
-        fetchAll();
-        
-        // Refresh every 30 seconds
-        setInterval(fetchAll, 30000);
+        refresh();
+        setInterval(refresh, 30000);
     </script>
 </body>
 </html>
