@@ -283,12 +283,59 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
             alerts = [asdict(a) for a in orch.health_monitor.get_alerts()]
             self._send_json({'alerts': alerts})
         
+        elif path == '/signals':
+            # Get pending signals
+            self._send_json({
+                'signals': [s.__dict__ for s in getattr(orch, 'pending_signals', [])],
+                'count': len(getattr(orch, 'pending_signals', []))
+            })
+        
         elif path == '/statuses':
             statuses = {k: asdict(v) for k, v in orch.health_monitor.get_all_statuses().items()}
             self._send_json({'statuses': statuses})
         
+        elif path == '/trades':
+            # Serve trade history from Obsidian vault
+            trades = self._load_obsidian_trades()
+            self._send_json(trades)
+        
+        elif path == '/' or path == '/dashboard' or path.startswith('/dashboard/'):
+            # Serve dashboard
+            self._serve_dashboard(path)
+        
         else:
             self._send_error('Not found', 404)
+    
+    def _serve_dashboard(self, path: str):
+        """Serve dashboard HTML"""
+        import os
+        from pathlib import Path
+        
+        dashboard_dir = Path(os.path.expanduser(
+            "~/.openclaw/workspace/projects/cash-town/dashboard"
+        ))
+        
+        if path in ['/', '/dashboard', '/dashboard/']:
+            file_path = dashboard_dir / 'index.html'
+        else:
+            # Strip /dashboard/ prefix
+            rel_path = path.replace('/dashboard/', '').lstrip('/')
+            file_path = dashboard_dir / rel_path
+        
+        if file_path.exists() and file_path.is_file():
+            content_type = 'text/html'
+            if file_path.suffix == '.css':
+                content_type = 'text/css'
+            elif file_path.suffix == '.js':
+                content_type = 'application/javascript'
+            
+            self.send_response(200)
+            self.send_header('Content-Type', content_type)
+            self.send_header('Access-Control-Allow-Origin', '*')
+            self.end_headers()
+            self.wfile.write(file_path.read_bytes())
+        else:
+            self._send_error('File not found', 404)
     
     def do_POST(self):
         orch = get_orchestrator()
@@ -326,6 +373,39 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
                 'success': True,
                 'statuses': {k: asdict(v) for k, v in orch.health_monitor.get_all_statuses().items()}
             })
+        
+        elif path == '/signals':
+            # Receive signal from an agent
+            try:
+                data = self._read_body()
+                signal_data = {
+                    'strategy_id': data['strategy_id'],
+                    'symbol': data['symbol'],
+                    'side': data['side'],
+                    'confidence': data['confidence'],
+                    'price': data['price'],
+                    'stop_loss': data.get('stop_loss'),
+                    'take_profit': data.get('take_profit'),
+                    'reason': data.get('reason', ''),
+                    'timestamp': data.get('timestamp', datetime.utcnow().isoformat()),
+                    'metadata': data.get('metadata', {})
+                }
+                
+                # Add to pending signals
+                if not hasattr(orch, 'pending_signals'):
+                    orch.pending_signals = []
+                orch.pending_signals.append(signal_data)
+                
+                # Keep only recent signals (last 100)
+                orch.pending_signals = orch.pending_signals[-100:]
+                
+                logger.info(f"📨 Signal received: {signal_data['side'].upper()} {signal_data['symbol']} from {signal_data['strategy_id']}")
+                
+                self._send_json({'success': True, 'message': 'Signal received'}, 201)
+            except KeyError as e:
+                self._send_error(f'Missing required field: {e}')
+            except Exception as e:
+                self._send_error(str(e))
         
         elif path == '/rotate':
             # Trigger immediate rotation evaluation
@@ -427,6 +507,81 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
                 self._send_error('Agent not found', 404)
         else:
             self._send_error('Not found', 404)
+    
+    def _load_obsidian_trades(self) -> list:
+        """Load trade history from Obsidian vault"""
+        import os
+        import re
+        from pathlib import Path
+        
+        trades = []
+        vault_path = Path(os.path.expanduser("~/.openclaw/workspace/vault/trading/daily"))
+        
+        if not vault_path.exists():
+            return trades
+        
+        # Parse daily markdown files
+        # Format: | Time | Symbol | Side | Entry | Exit | PnL | PnL% | Strategy | Reason |
+        for md_file in sorted(vault_path.glob("*.md"), reverse=True)[:30]:  # Last 30 days
+            try:
+                content = md_file.read_text()
+                date = md_file.stem  # YYYY-MM-DD
+                
+                lines = content.split('\n')
+                
+                for line in lines:
+                    # Skip header/separator lines
+                    if '|' not in line or '---' in line or 'Time' in line or 'Metric' in line:
+                        continue
+                    
+                    # Parse trade rows: | Time | Symbol | Side | Entry | Exit | PnL | PnL% | Strategy | Reason |
+                    if '/USDT' in line.upper() or '/USD' in line.upper():
+                        parts = [p.strip() for p in line.split('|')]
+                        parts = [p for p in parts if p]  # Remove empty
+                        
+                        if len(parts) >= 6:
+                            try:
+                                # Extract PnL (look for $ sign)
+                                pnl_str = parts[5] if len(parts) > 5 else '0'
+                                pnl = self._extract_number(pnl_str)
+                                
+                                trade = {
+                                    'date': date,
+                                    'time': parts[0],
+                                    'symbol': parts[1],
+                                    'side': 'long' if 'LONG' in parts[2].upper() else 'short',
+                                    'entry_price': self._extract_number(parts[3]),
+                                    'exit_price': self._extract_number(parts[4]),
+                                    'pnl': pnl,
+                                    'pnl_pct': parts[6] if len(parts) > 6 else '',
+                                    'strategy': parts[7] if len(parts) > 7 else 'unknown',
+                                    'reason': parts[8] if len(parts) > 8 else ''
+                                }
+                                trades.append(trade)
+                            except Exception as e:
+                                logger.debug(f"Error parsing line: {line[:50]}... - {e}")
+            except Exception as e:
+                logger.debug(f"Error parsing {md_file}: {e}")
+        
+        return trades
+    
+    def _extract_number(self, s: str) -> float:
+        """Extract number from string like '$123.45' or '-$10.00'"""
+        import re
+        match = re.search(r'-?\$?([\d,]+\.?\d*)', s.replace(',', ''))
+        if match:
+            num = float(match.group(1))
+            return -num if '-' in s else num
+        return 0.0
+    
+    def _extract_strategy(self, parts: list) -> str:
+        """Extract strategy name from parts"""
+        strategies = ['trend', 'turtle', 'weinstein', 'livermore', 'zweig', 'lynch', 'mean', 'stat']
+        for part in parts:
+            for strat in strategies:
+                if strat.lower() in part.lower():
+                    return part
+        return 'unknown'
     
     def log_message(self, format, *args):
         logger.info(f"{self.address_string()} - {format % args}")

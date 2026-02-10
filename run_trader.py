@@ -147,10 +147,14 @@ def run_live():
     print("   ⚠️  REAL TRADES WILL BE EXECUTED")
     print()
     
-    response = input("Type 'YES' to confirm: ")
-    if response != 'YES':
-        print("Cancelled")
-        sys.exit(0)
+    # Auto-confirm if environment variable set (for systemd)
+    if os.environ.get('CASH_TOWN_AUTO_CONFIRM') == '1':
+        print("Auto-confirmed via CASH_TOWN_AUTO_CONFIRM")
+    else:
+        response = input("Type 'YES' to confirm: ")
+        if response != 'YES':
+            print("Cancelled")
+            sys.exit(0)
     
     config = LoopConfig(
         execution_mode=ExecutionMode.LIVE,
