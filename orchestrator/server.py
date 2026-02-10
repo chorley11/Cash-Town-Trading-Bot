@@ -272,6 +272,23 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
                 'timestamp': datetime.utcnow().isoformat()
             })
         
+        elif path == '/balance':
+            # Check Cash Town's own KuCoin account balance
+            try:
+                from execution.kucoin import KuCoinFuturesExecutor
+                executor = KuCoinFuturesExecutor()
+                if executor.is_configured:
+                    balance = executor.get_account_overview()
+                    self._send_json({
+                        'source': 'cash-town-kucoin',
+                        'balance': balance,
+                        'configured': True
+                    })
+                else:
+                    self._send_json({'error': 'KuCoin not configured', 'configured': False})
+            except Exception as e:
+                self._send_json({'error': str(e)})
+        
         elif path == '/summary':
             self._send_json(orch.get_summary())
         
