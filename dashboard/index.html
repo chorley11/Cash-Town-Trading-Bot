@@ -51,10 +51,14 @@
         <!-- Overview Tab -->
         <div id="panel-overview">
             <!-- Summary Cards -->
-            <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+            <div class="grid grid-cols-2 md:grid-cols-6 gap-3 mb-4">
                 <div class="card p-4">
-                    <div class="text-gray-400 text-xs">Total PnL</div>
-                    <div id="total-pnl" class="text-xl font-bold">$0.00</div>
+                    <div class="text-gray-400 text-xs">Total PnL (All Time)</div>
+                    <div id="total-pnl" class="text-2xl font-bold">$0.00</div>
+                </div>
+                <div class="card p-4">
+                    <div class="text-gray-400 text-xs">Today's PnL</div>
+                    <div id="daily-pnl" class="text-xl font-bold">$0.00</div>
                 </div>
                 <div class="card p-4">
                     <div class="text-gray-400 text-xs">Open Positions</div>
@@ -86,10 +90,16 @@
                 </div>
             </div>
 
-            <!-- Quick Positions -->
-            <div class="card p-4">
-                <h3 class="font-bold mb-2">📊 Open Positions</h3>
-                <div id="positions-quick" class="overflow-x-auto"></div>
+            <!-- Positions by Bot -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div class="card p-4">
+                    <h3 class="font-bold mb-2">🤖 Cucurbit Positions</h3>
+                    <div id="positions-cucurbit" class="overflow-x-auto"></div>
+                </div>
+                <div class="card p-4">
+                    <h3 class="font-bold mb-2">💰 Cash Town Positions</h3>
+                    <div id="positions-cashtown" class="overflow-x-auto"></div>
+                </div>
             </div>
         </div>
 
@@ -349,12 +359,17 @@
         }
 
         function updatePositions(positions) {
-            const html = positions.length ? `
+            // Separate positions by bot (Cash Town strategies vs Cucurbit strategies)
+            const cashTownStrategies = ['cash_town', 'momentum', 'scalp'];
+            const cucurbitPositions = positions.filter(p => !cashTownStrategies.includes(p.strategyId?.toLowerCase()));
+            const cashTownPositions = positions.filter(p => cashTownStrategies.includes(p.strategyId?.toLowerCase()));
+            
+            const makeTable = (posArr) => posArr.length ? `
                 <table class="w-full text-sm">
                     <thead><tr class="text-gray-400 text-left">
                         <th class="pb-2">Symbol</th><th>Side</th><th>Entry</th><th>Current</th><th>PnL</th><th>Strategy</th><th></th>
                     </tr></thead>
-                    <tbody>${positions.map(p => `
+                    <tbody>${posArr.map(p => `
                         <tr class="border-t border-gray-700/50">
                             <td class="py-2 font-medium">${p.symbol}</td>
                             <td class="${p.side === 'long' ? 'positive' : 'negative'}">${p.side?.toUpperCase()}</td>
@@ -368,8 +383,9 @@
                 </table>
             ` : '<div class="text-gray-500 py-4 text-center">No open positions</div>';
             
-            document.getElementById('positions-quick').innerHTML = html;
-            document.getElementById('positions-full').innerHTML = html;
+            document.getElementById('positions-cucurbit').innerHTML = makeTable(cucurbitPositions);
+            document.getElementById('positions-cashtown').innerHTML = makeTable(cashTownPositions);
+            document.getElementById('positions-full').innerHTML = makeTable(positions);
         }
 
         function updateTrades(data) {
@@ -377,10 +393,23 @@
             const summary = data.summary || {};
             const chartData = data.chartData || [];
             
+            // Update Total PnL from summary (all time)
+            if (summary.totalPnl !== undefined) {
+                document.getElementById('total-pnl').textContent = `$${summary.totalPnl.toFixed(2)}`;
+                document.getElementById('total-pnl').className = `text-2xl font-bold ${summary.totalPnl >= 0 ? 'positive' : 'negative'}`;
+            }
+            
+            // Update Daily PnL
+            if (summary.dailyPnl !== undefined) {
+                document.getElementById('daily-pnl').textContent = `$${summary.dailyPnl.toFixed(2)}`;
+                document.getElementById('daily-pnl').className = `text-xl font-bold ${summary.dailyPnl >= 0 ? 'positive' : 'negative'}`;
+            }
+            
             // Update chart
+            const ctx = document.getElementById('pnl-chart').getContext('2d');
+            if (pnlChart) pnlChart.destroy();
+            
             if (chartData.length > 0) {
-                const ctx = document.getElementById('pnl-chart').getContext('2d');
-                if (pnlChart) pnlChart.destroy();
                 pnlChart = new Chart(ctx, {
                     type: 'line',
                     data: {
@@ -402,6 +431,44 @@
                         }
                     }
                 });
+            } else {
+                // Build chart from trades if no chartData
+                if (trades.length > 0) {
+                    let cumPnl = 0;
+                    const sortedTrades = [...trades].sort((a,b) => new Date(a.exitTimestamp) - new Date(b.exitTimestamp));
+                    const cumData = sortedTrades.map(t => {
+                        cumPnl += (t.pnl || 0);
+                        return { date: new Date(t.exitTimestamp).toLocaleDateString(), pnl: cumPnl };
+                    });
+                    
+                    pnlChart = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: cumData.map(d => d.date),
+                            datasets: [{
+                                label: 'Cumulative PnL',
+                                data: cumData.map(d => d.pnl),
+                                borderColor: cumPnl >= 0 ? '#22c55e' : '#ef4444',
+                                tension: 0.3,
+                                fill: false
+                            }]
+                        },
+                        options: {
+                            responsive: true,
+                            plugins: {legend: {display: false}},
+                            scales: {
+                                y: {grid: {color: '#2a2a4a'}, ticks: {color: '#888'}},
+                                x: {grid: {color: '#2a2a4a'}, ticks: {color: '#888', maxRotation: 45}}
+                            }
+                        }
+                    });
+                } else {
+                    // Show placeholder
+                    ctx.fillStyle = '#666';
+                    ctx.font = '14px sans-serif';
+                    ctx.textAlign = 'center';
+                    ctx.fillText('No trade data for chart', ctx.canvas.width/2, ctx.canvas.height/2);
+                }
             }
             
             // Trades table
@@ -441,6 +508,13 @@
             document.getElementById('profile-select').innerHTML = profiles.map(p => 
                 `<option value="${p}" ${p === data.currentProfile ? 'selected' : ''}>${p}</option>`
             ).join('');
+            
+            // Update daily PnL from risk state if not already set
+            const dailyPnlEl = document.getElementById('daily-pnl');
+            if (dailyPnlEl.textContent === '$0.00' && data.riskState?.dailyPnl !== undefined) {
+                dailyPnlEl.textContent = `$${data.riskState.dailyPnl.toFixed(2)}`;
+                dailyPnlEl.className = `text-xl font-bold ${data.riskState.dailyPnl >= 0 ? 'positive' : 'negative'}`;
+            }
             
             const stateHtml = `
                 <div class="space-y-1 text-sm">
