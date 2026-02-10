@@ -230,7 +230,10 @@ def main():
     parser.add_argument('--live', action='store_true', help='Enable live trading')
     args = parser.parse_args()
     
-    runner = CloudRunner(port=args.port, live_mode=args.live)
+    # Check for LIVE_MODE environment variable
+    live_mode = args.live or os.environ.get('LIVE_MODE', '').lower() in ('true', '1', 'yes')
+    
+    runner = CloudRunner(port=args.port, live_mode=live_mode)
     
     # Handle shutdown signals
     def shutdown(signum, frame):
