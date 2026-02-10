@@ -71,7 +71,17 @@ class KuCoinFuturesExecutor:
         self._load_credentials()
     
     def _load_credentials(self):
-        """Load API credentials from file"""
+        """Load API credentials from file or environment variables"""
+        # First try environment variables (for cloud deployment)
+        self.api_key = os.environ.get('KUCOIN_API_KEY')
+        self.api_secret = os.environ.get('KUCOIN_API_SECRET')
+        self.api_passphrase = os.environ.get('KUCOIN_API_PASSPHRASE')
+        
+        if self.is_configured:
+            logger.info("Loaded credentials from environment variables")
+            return
+        
+        # Fall back to credentials file
         try:
             if os.path.exists(self.credentials_path):
                 with open(self.credentials_path, 'r') as f:

@@ -603,5 +603,21 @@ def run_server(host: str = '0.0.0.0', port: int = 8888):
         orch.stop()
         server.shutdown()
 
+
+def run_server_with_orchestrator(orch: Orchestrator, host: str = '0.0.0.0', port: int = 8888):
+    """Run HTTP server with an external orchestrator instance"""
+    global _orchestrator
+    _orchestrator = orch
+    
+    server = HTTPServer((host, port), OrchestratorHandler)
+    logger.info(f"Cash Town Orchestrator running on http://{host}:{port}")
+    
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        logger.info("Shutting down...")
+        server.shutdown()
+
+
 if __name__ == '__main__':
     run_server()

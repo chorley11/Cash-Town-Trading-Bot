@@ -1,1 +1,1 @@
-web: python run.py --port $PORT
+web: python run_cloud.py --port $PORT
