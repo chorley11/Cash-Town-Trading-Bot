@@ -88,15 +88,19 @@ class HealthMonitor:
             positions = positions_data.get('positions', [])
             risk_state = risk_data.get('riskState', {})
             
+            # Cucurbit includes position count in /health response
+            trading_data = health_data.get('trading', {})
+            position_count = trading_data.get('total_positions') or len(positions)
+            
             return AgentStatus(
                 agent_id=agent.id,
                 healthy=health_data.get('status') == 'healthy',
                 last_heartbeat=datetime.utcnow().isoformat(),
-                open_positions=len(positions),
+                open_positions=position_count,
                 total_value=sum(p.get('value', 0) for p in positions),
                 unrealized_pnl=sum(p.get('unrealizedPnl', 0) for p in positions),
                 daily_pnl=risk_state.get('dailyPnl', 0),
-                can_trade=risk_state.get('canTrade', True),
+                can_trade=trading_data.get('running', risk_state.get('canTrade', True)),
                 error=None
             )
                 
