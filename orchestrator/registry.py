@@ -40,9 +40,12 @@ class AgentRegistry:
     """Registry for managing trading agents"""
     
     def __init__(self, config_path: str = None):
-        self.config_path = config_path or os.path.expanduser(
-            "~/.openclaw/workspace/projects/cash-town/config/agents.json"
-        )
+        if config_path:
+            self.config_path = config_path
+        else:
+            # Use path relative to this file's location
+            this_dir = os.path.dirname(os.path.abspath(__file__))
+            self.config_path = os.path.join(this_dir, '..', 'config', 'agents.json')
         self.agents: dict[str, AgentConfig] = {}
         self._load()
     

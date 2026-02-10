@@ -101,9 +101,12 @@ class BaseStrategyAgent(ABC):
         self.name = name
         self.symbols = symbols
         self.config = config or {}
-        self.data_dir = data_dir or os.path.expanduser(
-            f"~/.openclaw/workspace/projects/cash-town/data/{agent_id}"
-        )
+        # Use relative path from this file, or /tmp for cloud
+        if data_dir:
+            self.data_dir = data_dir
+        else:
+            this_dir = os.path.dirname(os.path.abspath(__file__))
+            self.data_dir = os.path.join(this_dir, '..', 'data', agent_id)
         
         # Ensure data directory exists
         os.makedirs(self.data_dir, exist_ok=True)

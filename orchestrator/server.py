@@ -311,9 +311,9 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
         import os
         from pathlib import Path
         
-        dashboard_dir = Path(os.path.expanduser(
-            "~/.openclaw/workspace/projects/cash-town/dashboard"
-        ))
+        # Use path relative to this file
+        this_dir = Path(os.path.dirname(os.path.abspath(__file__)))
+        dashboard_dir = this_dir.parent / 'dashboard'
         
         if path in ['/', '/dashboard', '/dashboard/']:
             file_path = dashboard_dir / 'index.html'
