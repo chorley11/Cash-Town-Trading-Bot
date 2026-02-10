@@ -167,10 +167,11 @@
         let pnlChart = null;
 
         async function fetchData() {
+            let summary = null;
             try {
                 // Fetch Cash Town data
                 const summaryRes = await fetch(`${CASHTOWN_API}/summary`);
-                const summary = await summaryRes.json();
+                summary = await summaryRes.json();
                 
                 const posRes = await fetch(`${CASHTOWN_API}/positions`);
                 const positions = await posRes.json();
@@ -180,13 +181,8 @@
                 
                 updateUI(summary, positions, signals);
                 updateCashTownStatus(summary);
-            } catch (err) {
-                console.error('Cash Town fetch error:', err);
-                document.getElementById('cashtown-status').textContent = '🔴';
-            }
-            
-            // Get Cucurbit status from Cash Town's health monitor (already proxied)
-            try {
+                
+                // Update Cucurbit from Cash Town's health monitor
                 const cucurbitStatus = summary.statuses?.cucurbit;
                 if (cucurbitStatus) {
                     updateCucurbitStatus({
@@ -197,7 +193,8 @@
                     });
                 }
             } catch (err) {
-                console.error('Cucurbit status error:', err);
+                console.error('Cash Town fetch error:', err);
+                document.getElementById('cashtown-status').textContent = '🔴';
                 document.getElementById('cucurbit-status').textContent = '🔴';
             }
         }
