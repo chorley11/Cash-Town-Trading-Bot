@@ -185,13 +185,19 @@
                 document.getElementById('cashtown-status').textContent = '🔴';
             }
             
-            // Fetch Cucurbit data separately
+            // Get Cucurbit status from Cash Town's health monitor (already proxied)
             try {
-                const cucurbitRes = await fetch(`${CUCURBIT_API}/api/status`);
-                const cucurbit = await cucurbitRes.json();
-                updateCucurbitStatus(cucurbit);
+                const cucurbitStatus = summary.statuses?.cucurbit;
+                if (cucurbitStatus) {
+                    updateCucurbitStatus({
+                        healthy: cucurbitStatus.healthy,
+                        openPositions: cucurbitStatus.open_positions || 0,
+                        unrealizedPnl: cucurbitStatus.unrealized_pnl || 0,
+                        canTrade: cucurbitStatus.can_trade
+                    });
+                }
             } catch (err) {
-                console.error('Cucurbit fetch error:', err);
+                console.error('Cucurbit status error:', err);
                 document.getElementById('cucurbit-status').textContent = '🔴';
             }
         }
@@ -209,7 +215,7 @@
         }
         
         function updateCucurbitStatus(data) {
-            document.getElementById('cucurbit-status').textContent = '🟢';
+            document.getElementById('cucurbit-status').textContent = data.healthy ? '🟢' : '🔴';
             document.getElementById('cucurbit-positions').textContent = `${data.openPositions || 0} positions`;
             document.getElementById('cucurbit-pnl').textContent = `Unrealized: $${(data.unrealizedPnl || 0).toFixed(2)}`;
         }
