@@ -181,21 +181,72 @@
                 
                 updateUI(summary, positions, signals);
                 updateCashTownStatus(summary);
-                
-                // Update Cucurbit from Cash Town's health monitor
-                const cucurbitStatus = summary.statuses?.cucurbit;
-                if (cucurbitStatus) {
-                    updateCucurbitStatus({
-                        healthy: cucurbitStatus.healthy,
-                        openPositions: cucurbitStatus.open_positions || 0,
-                        unrealizedPnl: cucurbitStatus.unrealized_pnl || 0,
-                        canTrade: cucurbitStatus.can_trade
-                    });
-                }
             } catch (err) {
                 console.error('Cash Town fetch error:', err);
                 document.getElementById('cashtown-status').textContent = '🔴';
+            }
+            
+            // Fetch full Cucurbit data via proxy
+            try {
+                const cucurbitRes = await fetch(`${CASHTOWN_API}/cucurbit`);
+                const cucurbit = await cucurbitRes.json();
+                if (!cucurbit.error) {
+                    updateCucurbitFull(cucurbit);
+                }
+            } catch (err) {
+                console.error('Cucurbit fetch error:', err);
                 document.getElementById('cucurbit-status').textContent = '🔴';
+            }
+        }
+        
+        function updateCucurbitFull(data) {
+            const trading = data.trading || {};
+            const strategies = trading.strategyMetrics || [];
+            
+            // Update Cucurbit status card
+            document.getElementById('cucurbit-status').textContent = data.status === 'healthy' ? '🟢' : '🔴';
+            document.getElementById('cucurbit-positions').textContent = `${trading.total_positions || 0} positions`;
+            
+            // Calculate totals from strategies
+            let totalPnl = 0, totalTrades = 0, wins = 0, losses = 0;
+            strategies.forEach(s => {
+                totalPnl += s.totalPnl || 0;
+                totalTrades += s.totalTrades || 0;
+                wins += s.winningTrades || 0;
+                losses += s.losingTrades || 0;
+            });
+            
+            document.getElementById('cucurbit-pnl').textContent = `PnL: $${totalPnl.toFixed(2)}`;
+            
+            // Update summary cards
+            document.getElementById('total-pnl').textContent = `$${totalPnl.toFixed(2)}`;
+            document.getElementById('total-pnl').className = `text-3xl font-bold ${totalPnl >= 0 ? 'positive' : 'negative'}`;
+            document.getElementById('total-trades').textContent = `${totalTrades} trades`;
+            
+            const winRate = totalTrades > 0 ? (wins / totalTrades * 100) : 0;
+            document.getElementById('win-rate').textContent = `${winRate.toFixed(1)}%`;
+            document.getElementById('win-loss').textContent = `${wins}W / ${losses}L`;
+            
+            // Update strategy agents list
+            const agentsContainer = document.getElementById('agents-container');
+            if (strategies.length > 0) {
+                agentsContainer.innerHTML = strategies.map(s => {
+                    const icon = s.status === 'active' ? '🟢' : '🔴';
+                    const pnlClass = s.totalPnl >= 0 ? 'positive' : 'negative';
+                    return `
+                        <div class="flex justify-between items-center p-2 bg-gray-800/50 rounded">
+                            <div>
+                                <span class="mr-2">${icon}</span>
+                                <span class="font-medium">${s.name}</span>
+                                <span class="text-gray-400 text-sm ml-2">${s.openPositions} pos</span>
+                            </div>
+                            <div class="text-right">
+                                <span class="${pnlClass}">$${s.totalPnl?.toFixed(2) || '0.00'}</span>
+                                <span class="text-gray-400 text-sm ml-2">${s.totalTrades || 0} trades</span>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
             }
         }
         

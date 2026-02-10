@@ -299,6 +299,18 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
             trades = self._load_obsidian_trades()
             self._send_json(trades)
         
+        elif path == '/cucurbit':
+            # Proxy full Cucurbit health data
+            try:
+                import requests as req
+                resp = req.get('https://autonomous-trading-cex-production.up.railway.app/health', timeout=10)
+                if resp.status_code == 200:
+                    self._send_json(resp.json())
+                else:
+                    self._send_json({'error': f'Cucurbit returned {resp.status_code}'})
+            except Exception as e:
+                self._send_json({'error': str(e)})
+        
         elif path == '/' or path == '/dashboard' or path.startswith('/dashboard/'):
             # Serve dashboard
             self._serve_dashboard(path)
