@@ -261,10 +261,14 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
         elif path == '/mode':
             # Show trading mode from environment
             live_mode = os.environ.get('LIVE_MODE', '').lower() in ('true', '1', 'yes')
+            cucurbit_key = os.environ.get('CUCURBIT_API_KEY', '')
             self._send_json({
                 'mode': 'LIVE' if live_mode else 'PAPER',
                 'live_mode': live_mode,
                 'kucoin_configured': bool(os.environ.get('KUCOIN_API_KEY')),
+                'cucurbit_configured': bool(cucurbit_key),
+                'cucurbit_key_length': len(cucurbit_key),
+                'cucurbit_key_preview': cucurbit_key[:8] + '...' if cucurbit_key else 'NOT SET',
                 'timestamp': datetime.utcnow().isoformat()
             })
         
