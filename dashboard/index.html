@@ -20,12 +20,45 @@
         <!-- Header -->
         <div class="flex justify-between items-center mb-8">
             <div>
-                <h1 class="text-3xl font-bold">💰 Cash Town Dashboard</h1>
-                <p class="text-gray-400">Multi-Agent Trading Swarm</p>
+                <h1 class="text-3xl font-bold">💰 Trading Dashboard</h1>
+                <p class="text-gray-400">Cash Town Swarm + Cucurbit Bot</p>
             </div>
             <div class="text-right">
                 <div id="status" class="text-lg font-semibold">Loading...</div>
                 <div id="last-update" class="text-sm text-gray-400"></div>
+            </div>
+        </div>
+        
+        <!-- Bot Status Row -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+            <!-- Cash Town -->
+            <div class="card p-4 border-l-4 border-green-500">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h3 class="font-bold text-lg">💰 Cash Town</h3>
+                        <p class="text-gray-400 text-sm">Multi-Agent Swarm (VM)</p>
+                    </div>
+                    <div class="text-right">
+                        <div id="cashtown-status" class="text-lg">🔴</div>
+                        <div id="cashtown-balance" class="text-sm text-gray-400">$0.00</div>
+                    </div>
+                </div>
+                <div id="cashtown-agents" class="mt-2 text-sm text-gray-400">0 agents</div>
+            </div>
+            
+            <!-- Cucurbit -->
+            <div class="card p-4 border-l-4 border-blue-500">
+                <div class="flex justify-between items-center">
+                    <div>
+                        <h3 class="font-bold text-lg">🤖 Cucurbit</h3>
+                        <p class="text-gray-400 text-sm">Original Bot (Railway)</p>
+                    </div>
+                    <div class="text-right">
+                        <div id="cucurbit-status" class="text-lg">🔴</div>
+                        <div id="cucurbit-positions" class="text-sm text-gray-400">0 positions</div>
+                    </div>
+                </div>
+                <div id="cucurbit-pnl" class="mt-2 text-sm text-gray-400">PnL: $0.00</div>
             </div>
         </div>
 
@@ -123,31 +156,62 @@
     </div>
 
     <script>
-        // API URL - uses Tailscale Funnel for public access
-        const API_BASE = new URLSearchParams(window.location.search).get('api') 
+        // API URLs
+        const CASHTOWN_API = new URLSearchParams(window.location.search).get('api') 
             || (window.location.hostname === 'localhost' ? 'http://localhost:8888' : 'https://clawbot.tail0d23a5.ts.net');
+        const CUCURBIT_API = 'https://autonomous-trading-cex-production.up.railway.app';
+        
+        // Use CASHTOWN_API as default for backwards compatibility
+        const API_BASE = CASHTOWN_API;
         
         let pnlChart = null;
 
         async function fetchData() {
             try {
-                // Fetch from orchestrator
-                const summaryRes = await fetch(`${API_BASE}/summary`);
+                // Fetch Cash Town data
+                const summaryRes = await fetch(`${CASHTOWN_API}/summary`);
                 const summary = await summaryRes.json();
                 
-                // Fetch positions
-                const posRes = await fetch(`${API_BASE}/positions`);
+                const posRes = await fetch(`${CASHTOWN_API}/positions`);
                 const positions = await posRes.json();
                 
-                // Fetch signals
-                const sigRes = await fetch(`${API_BASE}/signals`);
+                const sigRes = await fetch(`${CASHTOWN_API}/signals`);
                 const signals = await sigRes.json();
                 
                 updateUI(summary, positions, signals);
+                updateCashTownStatus(summary);
             } catch (err) {
-                console.error('Fetch error:', err);
-                document.getElementById('status').textContent = '🔴 Disconnected';
+                console.error('Cash Town fetch error:', err);
+                document.getElementById('cashtown-status').textContent = '🔴';
             }
+            
+            // Fetch Cucurbit data separately
+            try {
+                const cucurbitRes = await fetch(`${CUCURBIT_API}/api/status`);
+                const cucurbit = await cucurbitRes.json();
+                updateCucurbitStatus(cucurbit);
+            } catch (err) {
+                console.error('Cucurbit fetch error:', err);
+                document.getElementById('cucurbit-status').textContent = '🔴';
+            }
+        }
+        
+        function updateCashTownStatus(summary) {
+            const running = summary.orchestrator?.running;
+            document.getElementById('cashtown-status').textContent = running ? '🟢' : '🔴';
+            
+            const portfolio = summary.portfolio || {};
+            document.getElementById('cashtown-balance').textContent = `$${(portfolio.total_value || 0).toFixed(2)}`;
+            
+            const agents = summary.agents || [];
+            const healthyAgents = agents.filter(a => summary.statuses?.[a.id]?.healthy).length;
+            document.getElementById('cashtown-agents').textContent = `${healthyAgents}/${agents.length} agents healthy`;
+        }
+        
+        function updateCucurbitStatus(data) {
+            document.getElementById('cucurbit-status').textContent = '🟢';
+            document.getElementById('cucurbit-positions').textContent = `${data.openPositions || 0} positions`;
+            document.getElementById('cucurbit-pnl').textContent = `Unrealized: $${(data.unrealizedPnl || 0).toFixed(2)}`;
         }
 
         async function fetchTrades() {
