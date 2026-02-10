@@ -1,0 +1,113 @@
+{
+  "agents": [
+    {
+      "id": "cucurbit",
+      "name": "Cucurbit Bot",
+      "type": "cucurbit",
+      "endpoint": "https://autonomous-trading-cex-production.up.railway.app",
+      "api_key_path": "~/.config/cucurbit/api_key",
+      "allocation_pct": 40,
+      "max_positions": 5,
+      "max_drawdown_pct": 10.0,
+      "enabled": true
+    },
+    {
+      "id": "bts-lynch",
+      "name": "BTS Lynch",
+      "type": "strategy",
+      "strategy_class": "bts-lynch",
+      "symbols": ["BTCUSDTM", "ETHUSDTM", "SOLUSDTM", "AVAXUSDTM"],
+      "allocation_pct": 8,
+      "max_positions": 3,
+      "max_drawdown_pct": 5.0,
+      "enabled": true
+    },
+    {
+      "id": "zweig",
+      "name": "Zweig Thrust",
+      "type": "strategy",
+      "strategy_class": "zweig",
+      "symbols": ["BTCUSDTM", "ETHUSDTM", "SOLUSDTM"],
+      "allocation_pct": 7,
+      "max_positions": 2,
+      "max_drawdown_pct": 5.0,
+      "enabled": true
+    },
+    {
+      "id": "trend-following",
+      "name": "Trend Following",
+      "type": "strategy",
+      "strategy_class": "trend-following",
+      "symbols": ["BTCUSDTM", "ETHUSDTM", "SOLUSDTM", "AVAXUSDTM", "LINKUSDTM"],
+      "allocation_pct": 10,
+      "max_positions": 3,
+      "max_drawdown_pct": 5.0,
+      "enabled": true
+    },
+    {
+      "id": "mean-reversion",
+      "name": "Mean Reversion",
+      "type": "strategy",
+      "strategy_class": "mean-reversion",
+      "symbols": ["BTCUSDTM", "ETHUSDTM", "XRPUSDTM"],
+      "allocation_pct": 7,
+      "max_positions": 2,
+      "max_drawdown_pct": 4.0,
+      "enabled": true
+    },
+    {
+      "id": "turtle",
+      "name": "Turtle Trading",
+      "type": "strategy",
+      "strategy_class": "turtle",
+      "symbols": ["BTCUSDTM", "ETHUSDTM", "SOLUSDTM"],
+      "allocation_pct": 8,
+      "max_positions": 3,
+      "max_drawdown_pct": 5.0,
+      "enabled": true
+    },
+    {
+      "id": "weinstein",
+      "name": "Weinstein Stage",
+      "type": "strategy",
+      "strategy_class": "weinstein",
+      "symbols": ["BTCUSDTM", "ETHUSDTM", "SOLUSDTM", "AVAXUSDTM"],
+      "allocation_pct": 7,
+      "max_positions": 2,
+      "max_drawdown_pct": 5.0,
+      "enabled": true
+    },
+    {
+      "id": "livermore",
+      "name": "Livermore Method",
+      "type": "strategy",
+      "strategy_class": "livermore",
+      "symbols": ["BTCUSDTM", "ETHUSDTM"],
+      "allocation_pct": 7,
+      "max_positions": 2,
+      "max_drawdown_pct": 5.0,
+      "enabled": true
+    },
+    {
+      "id": "stat-arb",
+      "name": "Statistical Arbitrage",
+      "type": "strategy",
+      "strategy_class": "stat-arb",
+      "symbols": ["BTCUSDTM", "ETHUSDTM", "SOLUSDTM", "AVAXUSDTM"],
+      "allocation_pct": 6,
+      "max_positions": 4,
+      "max_drawdown_pct": 3.0,
+      "enabled": false,
+      "note": "Pairs trading - requires both legs, complex execution"
+    }
+  ],
+  "global_settings": {
+    "max_total_drawdown_pct": 15.0,
+    "max_daily_loss_pct": 5.0,
+    "correlation_limit": 0.7,
+    "rebalance_interval_hours": 24,
+    "health_check_interval_seconds": 300,
+    "reflection_interval_hours": 168,
+    "auto_improve": false
+  }
+}
