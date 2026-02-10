@@ -251,6 +251,16 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
                 'timestamp': datetime.utcnow().isoformat()
             })
         
+        elif path == '/mode':
+            # Show trading mode from environment
+            live_mode = os.environ.get('LIVE_MODE', '').lower() in ('true', '1', 'yes')
+            self._send_json({
+                'mode': 'LIVE' if live_mode else 'PAPER',
+                'live_mode': live_mode,
+                'kucoin_configured': bool(os.environ.get('KUCOIN_API_KEY')),
+                'timestamp': datetime.utcnow().isoformat()
+            })
+        
         elif path == '/summary':
             self._send_json(orch.get_summary())
         
