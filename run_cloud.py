@@ -159,7 +159,7 @@ class CloudRunner:
             
             # Main executor loop
             import requests
-            ORCHESTRATOR_URL = "http://localhost:8888"
+            ORCHESTRATOR_URL = f"http://localhost:{self.port}"
             
             while self.running:
                 try:
