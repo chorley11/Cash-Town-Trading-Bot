@@ -35,14 +35,24 @@ from agents.runner import AgentRunner
 from agents.strategies import STRATEGY_REGISTRY
 
 # Agent configurations
+# All symbols Cucurbit trades (32 pairs)
+ALL_SYMBOLS = [
+    'XBTUSDTM', 'ETHUSDTM', 'SOLUSDTM', 'AVAXUSDTM', 'LINKUSDTM', 'UNIUSDTM',
+    'AAVEUSDTM', 'ADAUSDTM', 'APTUSDTM', 'ARBUSDTM', 'ATOMUSDTM', 'BCHUSDTM',
+    'CHZUSDTM', 'CRVUSDTM', 'DOGEUSDTM', 'DOTUSDTM', 'ENJUSDTM', 'FETUSDTM',
+    'FILUSDTM', 'GALAUSDTM', 'HBARUSDTM', 'ICPUSDTM', 'IMXUSDTM', 'LDOUSDTM',
+    'LTCUSDTM', 'NEARUSDTM', 'OPUSDTM', 'RUNEUSDTM', 'SUIUSDTM', 'TIAUSDTM',
+    'WLDUSDTM', 'XRPUSDTM'
+]
+
 AGENT_CONFIGS = [
-    {'id': 'trend-following', 'symbols': ['XBTUSDTM', 'ETHUSDTM', 'SOLUSDTM', 'AVAXUSDTM', 'LINKUSDTM'], 'interval': 300},
-    {'id': 'mean-reversion', 'symbols': ['XBTUSDTM', 'ETHUSDTM', 'XRPUSDTM'], 'interval': 300},
-    {'id': 'turtle', 'symbols': ['XBTUSDTM', 'ETHUSDTM', 'SOLUSDTM'], 'interval': 300},
-    {'id': 'weinstein', 'symbols': ['XBTUSDTM', 'ETHUSDTM', 'SOLUSDTM', 'AVAXUSDTM'], 'interval': 300},
-    {'id': 'livermore', 'symbols': ['XBTUSDTM', 'ETHUSDTM'], 'interval': 300},
-    {'id': 'bts-lynch', 'symbols': ['XBTUSDTM', 'ETHUSDTM', 'SOLUSDTM', 'AVAXUSDTM'], 'interval': 300},
-    {'id': 'zweig', 'symbols': ['XBTUSDTM', 'ETHUSDTM', 'SOLUSDTM'], 'interval': 300},
+    {'id': 'trend-following', 'symbols': ALL_SYMBOLS, 'interval': 300},
+    {'id': 'mean-reversion', 'symbols': ALL_SYMBOLS, 'interval': 300},
+    {'id': 'turtle', 'symbols': ALL_SYMBOLS, 'interval': 300},
+    {'id': 'weinstein', 'symbols': ALL_SYMBOLS, 'interval': 300},
+    {'id': 'livermore', 'symbols': ALL_SYMBOLS, 'interval': 300},
+    {'id': 'bts-lynch', 'symbols': ALL_SYMBOLS, 'interval': 300},
+    {'id': 'zweig', 'symbols': ALL_SYMBOLS, 'interval': 300},
 ]
 
 class CloudRunner:
