@@ -4,7 +4,7 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "python run.py --port $PORT",
+    "startCommand": "python run_cloud.py --port $PORT --live",
     "healthcheckPath": "/health",
     "restartPolicyType": "ON_FAILURE"
   }
