@@ -374,6 +374,31 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
         elif path == '/positions':
             self._send_json(orch.position_manager.get_status())
         
+        elif path == '/positions/live':
+            # Fetch positions directly from KuCoin
+            try:
+                from execution.kucoin import KuCoinFuturesExecutor
+                executor = KuCoinFuturesExecutor()
+                positions = executor.get_positions()
+                account = executor.get_account_overview()
+                self._send_json({
+                    'positions': [
+                        {
+                            'symbol': p.symbol,
+                            'side': p.side,
+                            'size': p.size,
+                            'entry_price': p.entry_price,
+                            'unrealized_pnl': p.unrealized_pnl,
+                            'margin': p.margin,
+                            'leverage': p.leverage
+                        } for p in positions
+                    ],
+                    'account': account,
+                    'count': len(positions)
+                })
+            except Exception as e:
+                self._send_json({'error': str(e), 'positions': []})
+        
         elif path == '/positions/summary':
             self._send_json({'summary': orch.position_manager.summary()})
         
