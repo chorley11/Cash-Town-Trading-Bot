@@ -152,8 +152,7 @@ class CloudRunner:
             engine = ExecutionEngine(
                 executor=kucoin,
                 mode=mode,
-                risk_config=risk_config,
-                initial_balance=1000.0 if mode == ExecutionMode.PAPER else None
+                risk_config=risk_config
             )
             
             logger.info(f"Executor balance: ${engine.get_balance():,.2f}")
