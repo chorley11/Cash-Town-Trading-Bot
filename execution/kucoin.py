@@ -193,8 +193,35 @@ class KuCoinFuturesExecutor:
                 return pos
         return None
     
+    def set_margin_mode(self, symbol: str, mode: str = 'ISOLATED') -> bool:
+        """
+        Set margin mode for a symbol.
+        
+        Args:
+            symbol: Trading pair (e.g., 'XBTUSDTM')
+            mode: 'ISOLATED' or 'CROSS'
+        
+        Returns:
+            True if successful or already set, False otherwise
+        """
+        result = self._request('POST', '/api/v2/position/changeMarginMode', {
+            'symbol': symbol,
+            'marginMode': mode
+        })
+        
+        if result.get('code') == '200000':
+            logger.info(f"Set margin mode to {mode} for {symbol}")
+            return True
+        elif 'already' in str(result.get('msg', '')).lower():
+            # Already set to this mode
+            return True
+        else:
+            logger.warning(f"Could not set margin mode for {symbol}: {result}")
+            return False
+    
     def place_market_order(self, symbol: str, side: str, size: float, 
-                          leverage: int = 5, reduce_only: bool = False) -> Optional[str]:
+                          leverage: int = 5, reduce_only: bool = False,
+                          margin_mode: str = 'ISOLATED') -> Optional[str]:
         """
         Place a market order.
         
@@ -204,11 +231,15 @@ class KuCoinFuturesExecutor:
             size: Position size in contracts
             leverage: Leverage to use
             reduce_only: If True, only reduces existing position
+            margin_mode: 'ISOLATED' or 'CROSS'
         
         Returns:
             Order ID if successful, None otherwise
         """
-        # Set leverage first
+        # Set margin mode first (handles 330005 error)
+        self.set_margin_mode(symbol, margin_mode)
+        
+        # Set leverage
         self._request('POST', '/api/v1/position/risk-limit-level/change', {
             'symbol': symbol,
             'level': leverage
@@ -221,7 +252,8 @@ class KuCoinFuturesExecutor:
             'type': 'market',
             'size': int(size),
             'leverage': str(leverage),
-            'reduceOnly': reduce_only
+            'reduceOnly': reduce_only,
+            'marginMode': margin_mode
         }
         
         result = self._request('POST', '/api/v1/orders', data)
@@ -236,8 +268,11 @@ class KuCoinFuturesExecutor:
     
     def place_limit_order(self, symbol: str, side: str, size: float, price: float,
                          leverage: int = 5, reduce_only: bool = False,
-                         post_only: bool = False) -> Optional[str]:
+                         post_only: bool = False, margin_mode: str = 'ISOLATED') -> Optional[str]:
         """Place a limit order"""
+        # Set margin mode first (handles 330005 error)
+        self.set_margin_mode(symbol, margin_mode)
+        
         data = {
             'clientOid': f"ct_{int(time.time()*1000)}",
             'symbol': symbol,
@@ -247,7 +282,8 @@ class KuCoinFuturesExecutor:
             'size': int(size),
             'leverage': str(leverage),
             'reduceOnly': reduce_only,
-            'postOnly': post_only
+            'postOnly': post_only,
+            'marginMode': margin_mode
         }
         
         result = self._request('POST', '/api/v1/orders', data)
