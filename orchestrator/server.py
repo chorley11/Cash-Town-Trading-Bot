@@ -222,7 +222,7 @@ ALLOWED_ORIGINS = [
 ]
 
 # Public endpoints that don't require auth (health checks only)
-PUBLIC_ENDPOINTS = ['/health']
+PUBLIC_ENDPOINTS = ['/health', '/', '/dashboard']
 
 class OrchestratorHandler(BaseHTTPRequestHandler):
     """HTTP request handler for orchestrator API"""
@@ -314,7 +314,9 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
             return
         
         # All other endpoints require authentication
-        if path not in PUBLIC_ENDPOINTS and not self._check_auth():
+        # Dashboard paths are public (served as static HTML)
+        is_public = path in PUBLIC_ENDPOINTS or path.startswith('/dashboard')
+        if not is_public and not self._check_auth():
             self._send_unauthorized()
             return
         
