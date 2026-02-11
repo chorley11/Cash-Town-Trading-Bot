@@ -239,12 +239,16 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
     
     def _check_auth(self) -> bool:
         """Check API key authentication"""
+        # Always allow localhost/internal requests (for executor thread)
+        client_ip = self.client_address[0] if self.client_address else ''
+        if client_ip in ('127.0.0.1', 'localhost', '::1'):
+            return True
+        
         # Get expected API key from environment
         expected_key = os.environ.get('CASH_TOWN_API_KEY', '')
         if not expected_key:
-            # If no key configured, allow internal requests only (localhost)
-            client_ip = self.client_address[0] if self.client_address else ''
-            return client_ip in ('127.0.0.1', 'localhost', '::1')
+            # No key configured - allow all (backwards compat)
+            return True
         
         # Check Authorization header
         auth_header = self.headers.get('Authorization', '')
