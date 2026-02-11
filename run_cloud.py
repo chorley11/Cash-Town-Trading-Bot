@@ -155,7 +155,7 @@ class CloudRunner:
                 risk_config=risk_config
             )
             
-            logger.info(f"Executor balance: ${engine.get_balance():,.2f}")
+            logger.info(f"Executor initialized in {mode.value} mode")
             
             # Main executor loop
             import requests
