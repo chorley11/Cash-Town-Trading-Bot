@@ -15,6 +15,7 @@ from typing import Dict, List, Optional, Any
 from enum import Enum
 
 from .kucoin import KuCoinFuturesExecutor, Position
+from .strategy_tracker import tracker as strategy_tracker
 from orchestrator.signal_aggregator import AggregatedSignal
 from agents.base import SignalSide
 
@@ -313,6 +314,19 @@ class ExecutionEngine:
             logger.info(f"🔥 LIVE TRADE: {side.upper()} {size} {symbol}")
             logger.info(f"   Order ID: {order_id}")
             logger.info(f"   SL: ${stop_loss:.2f}")
+            logger.info(f"   Strategy: {signal.strategy_id}")
+            
+            # Track strategy attribution
+            trade_side = 'long' if side == 'buy' else 'short'
+            strategy_tracker.open_position(
+                symbol=symbol,
+                strategy_id=signal.strategy_id,
+                side=trade_side,
+                entry_price=price,
+                size=size,
+                stop_loss=stop_loss,
+                take_profit=take_profit
+            )
             
             result = ExecutionResult(
                 success=True,
@@ -373,6 +387,9 @@ class ExecutionEngine:
             success = self.executor.close_position(symbol)
             if success:
                 del self.positions[symbol]
+                # Track strategy close
+                current_price = position.entry_price  # TODO: get actual close price
+                strategy_tracker.close_position(symbol, current_price, reason)
             return ExecutionResult(
                 success=success,
                 order_id=None,

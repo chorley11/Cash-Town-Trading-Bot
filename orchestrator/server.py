@@ -375,9 +375,10 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
             self._send_json(orch.position_manager.get_status())
         
         elif path == '/positions/live':
-            # Fetch positions directly from KuCoin
+            # Fetch positions directly from KuCoin with strategy attribution
             try:
                 from execution.kucoin import KuCoinFuturesExecutor
+                from execution.strategy_tracker import tracker
                 executor = KuCoinFuturesExecutor()
                 positions = executor.get_positions()
                 account = executor.get_account_overview()
@@ -390,7 +391,8 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
                             'entry_price': p.entry_price,
                             'unrealized_pnl': p.unrealized_pnl,
                             'margin': p.margin,
-                            'leverage': p.leverage
+                            'leverage': p.leverage,
+                            'strategy_id': tracker.get_strategy(p.symbol) or 'unknown'
                         } for p in positions
                     ],
                     'account': account,
@@ -398,6 +400,26 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
                 })
             except Exception as e:
                 self._send_json({'error': str(e), 'positions': []})
+        
+        elif path == '/strategies':
+            # Get strategy performance stats
+            try:
+                from execution.strategy_tracker import tracker
+                positions = tracker.get_all_positions()
+                stats = tracker.get_strategy_stats()
+                self._send_json({
+                    'positions': {k: {
+                        'symbol': v.symbol,
+                        'strategy_id': v.strategy_id,
+                        'side': v.side,
+                        'entry_price': v.entry_price,
+                        'size': v.size,
+                        'entry_time': v.entry_time
+                    } for k, v in positions.items()},
+                    'stats': stats
+                })
+            except Exception as e:
+                self._send_json({'error': str(e), 'positions': {}, 'stats': {}})
         
         elif path == '/positions/summary':
             self._send_json({'summary': orch.position_manager.summary()})
