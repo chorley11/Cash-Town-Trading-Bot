@@ -303,10 +303,25 @@
                 const health = await healthRes.json();
                 updateHealth(health);
 
-                // Fetch positions
+                // Fetch Cucurbit positions (proxied)
                 const posRes = await authFetch(`${API}/cucurbit/positions`);
                 const posData = await posRes.json();
-                updatePositions(posData.positions || []);
+                
+                // Fetch Cash Town live positions directly from KuCoin
+                let cashTownLive = [];
+                try {
+                    const ctRes = await authFetch(`${API}/positions/live`);
+                    const ctData = await ctRes.json();
+                    cashTownLive = (ctData.positions || []).map(p => ({
+                        ...p,
+                        strategyId: 'cash-town-live',
+                        isCashTown: true
+                    }));
+                } catch (e) { console.warn('Could not fetch Cash Town live positions:', e); }
+                
+                // Combine positions
+                const allPositions = [...(posData.positions || []), ...cashTownLive];
+                updatePositions(allPositions);
 
                 // Fetch trades
                 const tradesRes = await authFetch(`${API}/cucurbit/trades`);
@@ -379,26 +394,31 @@
 
         function updatePositions(positions) {
             // Separate positions by bot (Cash Town strategies vs Cucurbit strategies)
-            const cashTownStrategies = ['cash_town', 'momentum', 'scalp'];
-            const cucurbitPositions = positions.filter(p => !cashTownStrategies.includes(p.strategyId?.toLowerCase()));
-            const cashTownPositions = positions.filter(p => cashTownStrategies.includes(p.strategyId?.toLowerCase()));
+            const cashTownStrategies = ['cash_town', 'momentum', 'scalp', 'cash-town-live'];
+            const isCashTown = (p) => p.isCashTown || cashTownStrategies.includes(p.strategyId?.toLowerCase());
+            const cucurbitPositions = positions.filter(p => !isCashTown(p));
+            const cashTownPositions = positions.filter(p => isCashTown(p));
             
             const makeTable = (posArr) => posArr.length ? `
                 <table class="w-full text-sm">
                     <thead><tr class="text-gray-400 text-left">
-                        <th class="pb-2">Symbol</th><th>Side</th><th>Entry</th><th>Current</th><th>PnL</th><th>Strategy</th><th></th>
+                        <th class="pb-2">Symbol</th><th>Side</th><th>Size</th><th>Entry</th><th>PnL</th><th>Strategy</th><th></th>
                     </tr></thead>
-                    <tbody>${posArr.map(p => `
+                    <tbody>${posArr.map(p => {
+                        const entry = p.entryPrice || p.entry_price || 0;
+                        const pnl = p.unrealizedPnl || p.unrealized_pnl || 0;
+                        const size = p.size || 0;
+                        return `
                         <tr class="border-t border-gray-700/50">
                             <td class="py-2 font-medium">${p.symbol}</td>
                             <td class="${p.side === 'long' ? 'positive' : 'negative'}">${p.side?.toUpperCase()}</td>
-                            <td>$${p.entryPrice?.toFixed(4) || '?'}</td>
-                            <td>$${p.currentPrice?.toFixed(4) || '?'}</td>
-                            <td class="${(p.unrealizedPnl || 0) >= 0 ? 'positive' : 'negative'}">$${(p.unrealizedPnl || 0).toFixed(2)}</td>
-                            <td class="text-gray-400">${p.strategyId || '?'}</td>
-                            <td><button class="text-red-400 hover:text-red-300" onclick="closePosition('${p.id}')">✕</button></td>
+                            <td>${size}</td>
+                            <td>$${entry.toFixed(4)}</td>
+                            <td class="${pnl >= 0 ? 'positive' : 'negative'}">$${pnl.toFixed(2)}</td>
+                            <td class="text-gray-400">${p.strategyId || 'live'}</td>
+                            <td>${p.id ? `<button class="text-red-400 hover:text-red-300" onclick="closePosition('${p.id}')">✕</button>` : ''}</td>
                         </tr>
-                    `).join('')}</tbody>
+                    `}).join('')}</tbody>
                 </table>
             ` : '<div class="text-gray-500 py-4 text-center">No open positions</div>';
             
