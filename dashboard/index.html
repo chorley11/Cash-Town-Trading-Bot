@@ -174,6 +174,25 @@
         const API = new URLSearchParams(window.location.search).get('api') 
             || (window.location.hostname === 'localhost' ? 'http://localhost:8888' : 'https://web-production-63664b.up.railway.app');
         
+        // API Key for authentication
+        let API_KEY = new URLSearchParams(window.location.search).get('key') 
+            || localStorage.getItem('cash_town_api_key') || '';
+        
+        // Prompt for API key if not set and not localhost
+        if (!API_KEY && window.location.hostname !== 'localhost') {
+            API_KEY = prompt('Enter Cash Town API Key:') || '';
+            if (API_KEY) localStorage.setItem('cash_town_api_key', API_KEY);
+        }
+        
+        // Helper for authenticated fetch
+        function authFetch(url, options = {}) {
+            const headers = options.headers || {};
+            if (API_KEY) {
+                headers['Authorization'] = `Bearer ${API_KEY}`;
+            }
+            return fetch(url, { ...options, headers });
+        }
+        
         let pnlChart = null;
         let currentTab = 'overview';
 
@@ -191,7 +210,7 @@
         async function startTrading() {
             if (!confirm('Start trading?')) return;
             try {
-                await fetch(`${API}/cucurbit/trading/start`, {method: 'POST'});
+                await authFetch(`${API}/cucurbit/trading/start`, {method: 'POST'});
                 showToast('Trading started');
                 refresh();
             } catch (e) { showToast('Error: ' + e.message, true); }
@@ -200,7 +219,7 @@
         async function stopTrading() {
             if (!confirm('Stop trading?')) return;
             try {
-                await fetch(`${API}/cucurbit/trading/stop`, {method: 'POST'});
+                await authFetch(`${API}/cucurbit/trading/stop`, {method: 'POST'});
                 showToast('Trading stopped');
                 refresh();
             } catch (e) { showToast('Error: ' + e.message, true); }
@@ -208,7 +227,7 @@
 
         async function syncPositions() {
             try {
-                await fetch(`${API}/cucurbit/sync-positions`, {method: 'POST'});
+                await authFetch(`${API}/cucurbit/sync-positions`, {method: 'POST'});
                 showToast('Positions synced');
                 refresh();
             } catch (e) { showToast('Error: ' + e.message, true); }
@@ -224,7 +243,7 @@
             if (!symbol || !sizeUsd) { showToast('Fill in symbol and size', true); return; }
             
             try {
-                const resp = await fetch(`${API}/cucurbit/positions`, {
+                const resp = await authFetch(`${API}/cucurbit/positions`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({symbol, side, sizeUsd, stopLoss})
@@ -242,7 +261,7 @@
         async function closePosition(id) {
             if (!confirm('Close this position?')) return;
             try {
-                const resp = await fetch(`${API}/cucurbit/positions/${id}`, {method: 'DELETE'});
+                const resp = await authFetch(`${API}/cucurbit/positions/${id}`, {method: 'DELETE'});
                 const data = await resp.json();
                 showToast(data.success ? 'Position closed' : 'Error: ' + data.error, !data.success);
                 refresh();
@@ -253,7 +272,7 @@
         async function changeProfile() {
             const profile = document.getElementById('profile-select').value;
             try {
-                await fetch(`${API}/cucurbit/risk-profile`, {
+                await authFetch(`${API}/cucurbit/risk-profile`, {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({profile})
@@ -266,7 +285,7 @@
         async function clearWeights() {
             if (!confirm('Clear all strategy weights?')) return;
             try {
-                await fetch(`${API}/cucurbit/weights`, {method: 'DELETE'});
+                await authFetch(`${API}/cucurbit/weights`, {method: 'DELETE'});
                 showToast('Weights cleared');
                 refresh();
             } catch (e) { showToast('Error: ' + e.message, true); }
@@ -280,37 +299,37 @@
         async function refresh() {
             try {
                 // Fetch Cucurbit health data
-                const healthRes = await fetch(`${API}/cucurbit`);
+                const healthRes = await authFetch(`${API}/cucurbit`);
                 const health = await healthRes.json();
                 updateHealth(health);
 
                 // Fetch positions
-                const posRes = await fetch(`${API}/cucurbit/positions`);
+                const posRes = await authFetch(`${API}/cucurbit/positions`);
                 const posData = await posRes.json();
                 updatePositions(posData.positions || []);
 
                 // Fetch trades
-                const tradesRes = await fetch(`${API}/cucurbit/trades`);
+                const tradesRes = await authFetch(`${API}/cucurbit/trades`);
                 const tradesData = await tradesRes.json();
                 updateTrades(tradesData);
 
                 // Fetch risk profile
-                const riskRes = await fetch(`${API}/cucurbit/risk-profile`);
+                const riskRes = await authFetch(`${API}/cucurbit/risk-profile`);
                 const riskData = await riskRes.json();
                 updateRisk(riskData);
 
                 // Fetch signals
-                const sigRes = await fetch(`${API}/cucurbit/signals?limit=20`);
+                const sigRes = await authFetch(`${API}/cucurbit/signals?limit=20`);
                 const sigData = await sigRes.json();
                 updateSignals(sigData.signals || []);
 
                 // Fetch weights
-                const weightsRes = await fetch(`${API}/cucurbit/weights`);
+                const weightsRes = await authFetch(`${API}/cucurbit/weights`);
                 const weightsData = await weightsRes.json();
                 updateWeights(weightsData.weights || {});
 
                 // Fetch balances
-                const balRes = await fetch(`${API}/cucurbit/balances`);
+                const balRes = await authFetch(`${API}/cucurbit/balances`);
                 const balData = await balRes.json();
                 if (balData.balances) {
                     const equity = balData.balances.USDT_EQUITY || balData.balances.accountEquity || 0;
