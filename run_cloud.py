@@ -224,6 +224,7 @@ class CloudRunner:
     def _process_signal(self, engine, signal: dict):
         """Process a single signal"""
         from agents.base import Signal, SignalSide
+        from orchestrator.signal_aggregator import AggregatedSignal
         
         try:
             sig = Signal(
@@ -238,7 +239,17 @@ class CloudRunner:
                 timestamp=datetime.fromisoformat(signal['timestamp']) if signal.get('timestamp') else datetime.utcnow()
             )
             
-            result = engine.execute_signal(sig)
+            # Wrap in AggregatedSignal for ExecutionEngine
+            agg_sig = AggregatedSignal(
+                signal=sig,
+                rank=1,
+                sources=[signal.get('strategy_id', 'unknown')],
+                conflicts=[],
+                consensus_score=1.0,
+                adjusted_confidence=signal['confidence']
+            )
+            
+            result = engine.execute_signal(agg_sig)
             if result:
                 logger.info(f"✅ Executed: {sig.side.value} {sig.symbol}")
             
