@@ -216,6 +216,7 @@ def get_orchestrator() -> Orchestrator:
 # Security configuration
 ALLOWED_ORIGINS = [
     'https://cash-town-trading-bot.vercel.app',
+    'https://cash-town-trading-bot-tal9.vercel.app',
     'http://localhost:3000',
     'http://localhost:8080',
     'http://127.0.0.1:8080',
