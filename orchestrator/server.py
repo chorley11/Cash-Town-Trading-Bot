@@ -213,18 +213,64 @@ def get_orchestrator() -> Orchestrator:
         _orchestrator = Orchestrator()
     return _orchestrator
 
+# Security configuration
+ALLOWED_ORIGINS = [
+    'https://cash-town-trading-bot.vercel.app',
+    'http://localhost:3000',
+    'http://localhost:8080',
+    'http://127.0.0.1:8080',
+]
+
+# Public endpoints that don't require auth (health checks only)
+PUBLIC_ENDPOINTS = ['/health']
+
 class OrchestratorHandler(BaseHTTPRequestHandler):
     """HTTP request handler for orchestrator API"""
+    
+    def _get_cors_origin(self) -> str:
+        """Return allowed origin or empty string"""
+        origin = self.headers.get('Origin', '')
+        if origin in ALLOWED_ORIGINS:
+            return origin
+        # Allow localhost variations for development
+        if origin.startswith('http://localhost:') or origin.startswith('http://127.0.0.1:'):
+            return origin
+        return ''
+    
+    def _check_auth(self) -> bool:
+        """Check API key authentication"""
+        # Get expected API key from environment
+        expected_key = os.environ.get('CASH_TOWN_API_KEY', '')
+        if not expected_key:
+            # If no key configured, allow internal requests only (localhost)
+            client_ip = self.client_address[0] if self.client_address else ''
+            return client_ip in ('127.0.0.1', 'localhost', '::1')
+        
+        # Check Authorization header
+        auth_header = self.headers.get('Authorization', '')
+        if auth_header.startswith('Bearer '):
+            token = auth_header[7:]
+            return token == expected_key
+        
+        # Also check X-API-Key header
+        api_key = self.headers.get('X-API-Key', '')
+        return api_key == expected_key
     
     def _send_json(self, data: dict, status: int = 200):
         self.send_response(status)
         self.send_header('Content-Type', 'application/json')
-        self.send_header('Access-Control-Allow-Origin', '*')
+        cors_origin = self._get_cors_origin()
+        if cors_origin:
+            self.send_header('Access-Control-Allow-Origin', cors_origin)
+            self.send_header('Access-Control-Allow-Credentials', 'true')
         self.end_headers()
         self.wfile.write(json.dumps(data, indent=2, default=str).encode())
     
     def _send_error(self, message: str, status: int = 400):
         self._send_json({'error': message}, status)
+    
+    def _send_unauthorized(self):
+        self._send_json({'error': 'Unauthorized - API key required'}, 401)
     
     def _read_body(self) -> dict:
         content_length = int(self.headers.get('Content-Length', 0))
@@ -242,9 +288,12 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
     def do_OPTIONS(self):
         """Handle CORS preflight"""
         self.send_response(200)
-        self.send_header('Access-Control-Allow-Origin', '*')
+        cors_origin = self._get_cors_origin()
+        if cors_origin:
+            self.send_header('Access-Control-Allow-Origin', cors_origin)
+            self.send_header('Access-Control-Allow-Credentials', 'true')
         self.send_header('Access-Control-Allow-Methods', 'GET, POST, PATCH, DELETE, OPTIONS')
-        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization')
+        self.send_header('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key')
         self.end_headers()
     
     def do_GET(self):
@@ -252,23 +301,27 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         
+        # Health endpoint is public
         if path == '/health':
             self._send_json({
                 'status': 'healthy' if orch.running else 'stopped',
                 'timestamp': datetime.utcnow().isoformat()
             })
+            return
         
-        elif path == '/mode':
-            # Show trading mode from environment
+        # All other endpoints require authentication
+        if path not in PUBLIC_ENDPOINTS and not self._check_auth():
+            self._send_unauthorized()
+            return
+        
+        if path == '/mode':
+            # Show trading mode (sanitized - no sensitive info)
             live_mode = os.environ.get('LIVE_MODE', '').lower() in ('true', '1', 'yes')
-            cucurbit_key = os.environ.get('CUCURBIT_API_KEY', '')
             self._send_json({
                 'mode': 'LIVE' if live_mode else 'PAPER',
                 'live_mode': live_mode,
                 'kucoin_configured': bool(os.environ.get('KUCOIN_API_KEY')),
-                'cucurbit_configured': bool(cucurbit_key),
-                'cucurbit_key_length': len(cucurbit_key),
-                'cucurbit_key_preview': cucurbit_key[:8] + '...' if cucurbit_key else 'NOT SET',
+                'cucurbit_configured': bool(os.environ.get('CUCURBIT_API_KEY')),
                 'timestamp': datetime.utcnow().isoformat()
             })
         
@@ -413,6 +466,11 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         path = parsed.path
         
+        # All POST endpoints require authentication (except /signals from internal agents)
+        if path != '/signals' and not self._check_auth():
+            self._send_unauthorized()
+            return
+        
         if path == '/agents':
             # Register new agent
             try:
@@ -539,6 +597,11 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
             self._send_error('Not found', 404)
     
     def do_PATCH(self):
+        # All PATCH endpoints require authentication
+        if not self._check_auth():
+            self._send_unauthorized()
+            return
+            
         orch = get_orchestrator()
         parsed = urlparse(self.path)
         path = parsed.path
@@ -576,6 +639,11 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
             self._send_error('Not found', 404)
     
     def do_DELETE(self):
+        # All DELETE endpoints require authentication
+        if not self._check_auth():
+            self._send_unauthorized()
+            return
+            
         orch = get_orchestrator()
         parsed = urlparse(self.path)
         path = parsed.path
