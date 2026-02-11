@@ -322,10 +322,12 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
             self._send_json({'alerts': alerts})
         
         elif path == '/signals':
-            # Get pending signals
+            # Get pending signals (may be dicts or objects)
+            pending = getattr(orch, 'pending_signals', [])
+            signals = [s if isinstance(s, dict) else s.__dict__ for s in pending]
             self._send_json({
-                'signals': [s.__dict__ for s in getattr(orch, 'pending_signals', [])],
-                'count': len(getattr(orch, 'pending_signals', []))
+                'signals': signals,
+                'count': len(pending)
             })
         
         elif path == '/statuses':
