@@ -35,8 +35,16 @@ from agents.runner import AgentRunner
 from agents.strategies import STRATEGY_REGISTRY
 
 # Agent configurations
-# Top 175 pairs by 24h USD turnover on KuCoin Futures
+# Large caps only - matching Cucurbit's symbol universe
 ALL_SYMBOLS = [
+    'XBTUSDTM', 'ETHUSDTM', 'SOLUSDTM', 'XRPUSDTM', 'ADAUSDTM', 'LINKUSDTM',
+    'DOTUSDTM', 'AVAXUSDTM', 'MATICUSDTM', 'ATOMUSDTM', 'UNIUSDTM', 'LTCUSDTM',
+    'BCHUSDTM', 'NEARUSDTM', 'APTUSDTM', 'ARBUSDTM', 'OPUSDTM', 'FILUSDTM',
+    'INJUSDTM', 'TIAUSDTM', 'RENDERUSDTM', 'SUIUSDTM', 'TONUSDTM', 'ICPUSDTM',
+]
+
+# Old 175 meme/small cap list (disabled)
+_OLD_ALL_SYMBOLS = [
     'XBTUSDTM', 'ETHUSDTM', 'SOLUSDTM', 'XRPUSDTM', 'RIVERUSDTM', 'ADAUSDTM',
     'PEPEUSDTM', 'PIPPINUSDTM', 'MUSDTM', 'LINKUSDTM', 'DOGEUSDTM', 'HYPEUSDTM',
     'ZROUSDTM', 'ZECUSDTM', 'XMRUSDTM', 'SUIUSDTM', 'BEATUSDTM', 'BCHUSDTM',
