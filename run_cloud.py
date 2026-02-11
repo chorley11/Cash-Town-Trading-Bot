@@ -227,6 +227,7 @@ class CloudRunner:
         
         try:
             sig = Signal(
+                strategy_id=signal.get('strategy_id', 'unknown'),
                 symbol=signal['symbol'],
                 side=SignalSide(signal['side']),
                 confidence=signal['confidence'],
