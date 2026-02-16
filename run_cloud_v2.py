@@ -47,14 +47,16 @@ ALL_SYMBOLS = [
     'INJUSDTM', 'TIAUSDTM', 'RENDERUSDTM', 'SUIUSDTM', 'TONUSDTM', 'ICPUSDTM',
 ]
 
+# OPTIMIZED: Removed zweig (14% WR = bleeding money)
+# Performance-ranked: trend-following is the star (+$208, 51% WR)
 AGENT_CONFIGS = [
-    {'id': 'trend-following', 'symbols': ALL_SYMBOLS, 'interval': 300},
+    {'id': 'trend-following', 'symbols': ALL_SYMBOLS, 'interval': 300},  # STAR: 51% WR, +$208
     {'id': 'mean-reversion', 'symbols': ALL_SYMBOLS, 'interval': 300},
     {'id': 'turtle', 'symbols': ALL_SYMBOLS, 'interval': 300},
     {'id': 'weinstein', 'symbols': ALL_SYMBOLS, 'interval': 300},
     {'id': 'livermore', 'symbols': ALL_SYMBOLS, 'interval': 300},
     {'id': 'bts-lynch', 'symbols': ALL_SYMBOLS, 'interval': 300},
-    {'id': 'zweig', 'symbols': ALL_SYMBOLS, 'interval': 300},
+    # REMOVED: 'zweig' - 14% WR, consistent loser
 ]
 
 class CloudRunnerV2:
@@ -150,6 +152,9 @@ class CloudRunnerV2:
                     })
                 elif self.path == '/learning':
                     self._respond(200, orchestrator.get_learning_summary())
+                elif self.path == '/multipliers':
+                    # Endpoint for executor to get dynamic strategy multipliers
+                    self._respond(200, orchestrator.get_strategy_multipliers())
                 else:
                     self._respond(404, {'error': 'Not found'})
             
@@ -276,6 +281,8 @@ class CloudRunnerV2:
             ORCHESTRATOR_URL = f"http://localhost:{self.port}"
             
             last_signal_time = {}  # Track last signal time per symbol
+            last_multiplier_update = 0  # Track when we last fetched multipliers
+            MULTIPLIER_UPDATE_INTERVAL = 300  # Update multipliers every 5 minutes
             
             while self.running:
                 try:
@@ -309,6 +316,19 @@ class CloudRunnerV2:
                         p.symbol: 'long' if p.is_long else 'short'
                         for p in engine.positions.values()
                     }
+                    
+                    # DYNAMIC MULTIPLIERS: Periodically update strategy position multipliers
+                    now_ts = time.time()
+                    if now_ts - last_multiplier_update > MULTIPLIER_UPDATE_INTERVAL:
+                        try:
+                            mult_resp = requests.get(f"{ORCHESTRATOR_URL}/multipliers", timeout=5)
+                            if mult_resp.status_code == 200:
+                                multipliers = mult_resp.json()
+                                engine.risk.strategy_boost_multipliers = multipliers
+                                logger.info(f"📊 Updated strategy multipliers: {multipliers}")
+                                last_multiplier_update = now_ts
+                        except:
+                            pass
                     
                 except requests.exceptions.ConnectionError:
                     pass

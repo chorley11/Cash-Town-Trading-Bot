@@ -233,13 +233,14 @@ class SmartOrchestrator:
         self._update_strategy_performance(strategy_id, pnl > 0, pnl_pct)
     
     def _update_strategy_performance(self, strategy_id: str, won: bool, pnl_pct: float):
-        """Update strategy performance tracking"""
+        """Update strategy performance tracking with dynamic multiplier calculation"""
         if strategy_id not in self.strategy_performance:
             self.strategy_performance[strategy_id] = {
                 'trades': 0,
                 'wins': 0,
                 'total_pnl_pct': 0,
-                'score': 0
+                'score': 0,
+                'multiplier': 1.0  # Dynamic position sizing multiplier
             }
         
         perf = self.strategy_performance[strategy_id]
@@ -251,6 +252,26 @@ class SmartOrchestrator:
         win_rate = perf['wins'] / perf['trades'] if perf['trades'] > 0 else 0
         avg_return = perf['total_pnl_pct'] / perf['trades'] if perf['trades'] > 0 else 0
         perf['score'] = win_rate * (1 + avg_return / 10)  # Normalized score 0-2
+        perf['win_rate'] = win_rate
+        
+        # DYNAMIC MULTIPLIER: Adjust position sizing based on track record
+        # Need minimum 10 trades to start adjusting
+        if perf['trades'] >= 10:
+            if win_rate < 0.35:
+                # Terrible: disable this strategy
+                perf['multiplier'] = 0.0
+                logger.warning(f"🚫 Strategy {strategy_id} disabled: {win_rate:.0%} WR")
+            elif win_rate < 0.45:
+                # Poor: heavily reduce
+                perf['multiplier'] = 0.5
+            elif perf['total_pnl_pct'] < 0:
+                # Negative P&L despite OK WR: bad R:R
+                perf['multiplier'] = 0.7
+            elif win_rate >= 0.50 and perf['total_pnl_pct'] > 0:
+                # Winner: boost proportionally to P&L
+                perf['multiplier'] = min(2.0, 1.0 + perf['total_pnl_pct'] / 500)
+            else:
+                perf['multiplier'] = 1.0
         
         self._save_strategy_performance()
     
@@ -328,6 +349,7 @@ class SmartOrchestrator:
         """Get summary of learning data for reflection"""
         return {
             'strategy_performance': self.strategy_performance,
+            'strategy_multipliers': self.get_strategy_multipliers(),
             'pending_counterfactuals': len(self.pending_counterfactual),
             'data_files': {
                 'signals': str(SIGNALS_LOG),
@@ -335,3 +357,26 @@ class SmartOrchestrator:
                 'counterfactual': str(COUNTERFACTUAL_LOG)
             }
         }
+    
+    def get_strategy_multipliers(self) -> Dict[str, float]:
+        """
+        Get current strategy position sizing multipliers.
+        Used by execution engine for dynamic position sizing.
+        """
+        multipliers = {
+            # Default multipliers (before we have data)
+            'trend-following': 1.5,  # Known performer: +$208, 51% WR
+            'mean-reversion': 1.0,
+            'turtle': 1.0,
+            'weinstein': 1.0,
+            'livermore': 1.0,
+            'bts-lynch': 0.8,
+            'zweig': 0.0,  # DISABLED: 14% WR
+        }
+        
+        # Override with learned multipliers where available
+        for strategy_id, perf in self.strategy_performance.items():
+            if 'multiplier' in perf:
+                multipliers[strategy_id] = perf['multiplier']
+        
+        return multipliers

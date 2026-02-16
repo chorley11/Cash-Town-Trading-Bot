@@ -4,19 +4,24 @@ A sophisticated trading orchestration system that coordinates multiple strategy 
 
 ## Features
 
-### 🤖 8 Strategy Agents
-Each agent runs independently with its own logic:
+### 🤖 Strategy Agents (Performance-Optimized)
+Each agent runs independently with its own logic. Position sizes are **dynamically weighted** based on track record:
 
-| Strategy | Based On | Style | Best Market |
-|----------|----------|-------|-------------|
-| **Trend Following** | MA crossovers + ADX | Ride momentum | Trending |
-| **Mean Reversion** | Bollinger Bands + RSI | Fade extremes | Ranging |
-| **Turtle** | Richard Dennis | 20-day breakouts | Any |
-| **Weinstein** | Stage Analysis | Buy Stage 2, short Stage 4 | Weekly trends |
-| **Livermore** | Jesse Livermore | Pivotal points | All |
-| **BTS Lynch** | Peter Lynch | High-momentum picks | Growth |
-| **Zweig** | Martin Zweig | Breadth thrust signals | Bottoms |
-| **Stat Arb** | Pairs trading | Mean-revert spreads | Correlated pairs |
+| Strategy | Based On | Style | Status | Multiplier |
+|----------|----------|-------|--------|------------|
+| **Trend Following** ⭐ | MA crossovers + ADX | Ride momentum | **STAR** (+$208, 51% WR) | 1.5x |
+| **Mean Reversion** | Bollinger Bands + RSI | Fade extremes | Active | 1.0x |
+| **Turtle** | Richard Dennis | 20-day breakouts | Active | 1.0x |
+| **Weinstein** | Stage Analysis | Buy Stage 2, short Stage 4 | Active | 1.0x |
+| **Livermore** | Jesse Livermore | Pivotal points | Active | 1.0x |
+| **BTS Lynch** | Peter Lynch | High-momentum picks | Active | 0.8x |
+| **Zweig** | Martin Zweig | Breadth thrust signals | **DISABLED** (14% WR) | 0.0x |
+| **Stat Arb** | Pairs trading | Mean-revert spreads | Available | 1.0x |
+
+### 🛡️ Risk Controls
+- **Drawdown Protection**: When account drops 10% from peak, position sizes reduced by 50%
+- **Dynamic Strategy Weighting**: Winners get bigger positions, losers get smaller/disabled
+- **Daily Loss Limit**: Kill switch at 5% daily loss
 
 ### 🔄 Active Position Rotation
 The orchestrator actively manages positions:

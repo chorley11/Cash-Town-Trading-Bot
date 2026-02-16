@@ -11,7 +11,7 @@ Responsibilities:
 import logging
 from dataclasses import dataclass, field
 from datetime import datetime, date
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, TYPE_CHECKING
 from enum import Enum
 
 from .kucoin import KuCoinFuturesExecutor, Position
@@ -37,6 +37,24 @@ class RiskConfig:
     default_stop_loss_pct: float = 2.0  # 2% stop loss
     default_take_profit_pct: float = 4.0  # 4% take profit
     min_order_value_usd: float = 10.0
+    # DRAWDOWN PROTECTION: 10% account drop = reduce positions by this factor
+    drawdown_threshold_pct: float = 10.0
+    drawdown_reduction_factor: float = 0.5  # 50% smaller positions when in drawdown
+    # STRATEGY PERFORMANCE MULTIPLIERS (dynamic sizing based on track record)
+    strategy_boost_multipliers: Dict = None  # Set at runtime
+    
+    def __post_init__(self):
+        if self.strategy_boost_multipliers is None:
+            # Default multipliers: star performers get bigger positions
+            self.strategy_boost_multipliers = {
+                'trend-following': 1.5,  # STAR: 51% WR, +$208 - BOOST 50%
+                'mean-reversion': 1.0,
+                'turtle': 1.0,
+                'weinstein': 1.0,
+                'livermore': 1.0,
+                'bts-lynch': 0.8,
+                'zweig': 0.0,  # DISABLED: 14% WR
+            }
 
 @dataclass
 class ExecutionResult:
@@ -84,6 +102,11 @@ class ExecutionEngine:
         # Kill switch
         self.killed = False
         self.kill_reason: Optional[str] = None
+        
+        # DRAWDOWN PROTECTION: Track peak balance for drawdown calculation
+        self.peak_balance: float = 0.0
+        self.in_drawdown_mode: bool = False
+        self.drawdown_pct: float = 0.0
     
     def refresh_state(self):
         """Refresh account state from exchange"""
@@ -103,7 +126,11 @@ class ExecutionEngine:
             # Check daily loss limit
             self._check_daily_loss()
             
-            logger.info(f"State refreshed: ${self.account_balance:.2f} balance, {len(self.positions)} positions")
+            # DRAWDOWN PROTECTION: Check and update drawdown state
+            self._check_drawdown()
+            
+            drawdown_status = f" [DRAWDOWN MODE: {self.drawdown_pct:.1f}%]" if self.in_drawdown_mode else ""
+            logger.info(f"State refreshed: ${self.account_balance:.2f} balance, {len(self.positions)} positions{drawdown_status}")
             
         except Exception as e:
             logger.error(f"Error refreshing state: {e}")
@@ -128,6 +155,31 @@ class ExecutionEngine:
                 self.kill_reason = f"Daily loss limit hit: {loss_pct:.1f}%"
                 logger.critical(f"🛑 KILL SWITCH ACTIVATED: {self.kill_reason}")
     
+    def _check_drawdown(self):
+        """
+        DRAWDOWN PROTECTION: Monitor account drawdown from peak.
+        If drawdown exceeds threshold, reduce position sizes by factor.
+        """
+        total_equity = self.account_balance + sum(p.unrealized_pnl for p in self.positions.values())
+        
+        # Update peak balance
+        if total_equity > self.peak_balance:
+            self.peak_balance = total_equity
+            if self.in_drawdown_mode:
+                logger.info(f"📈 Exited drawdown mode - new peak: ${self.peak_balance:.2f}")
+            self.in_drawdown_mode = False
+            self.drawdown_pct = 0.0
+        
+        # Calculate current drawdown
+        if self.peak_balance > 0:
+            self.drawdown_pct = (self.peak_balance - total_equity) / self.peak_balance * 100
+            
+            # Enter drawdown mode if threshold exceeded
+            if self.drawdown_pct >= self.risk.drawdown_threshold_pct and not self.in_drawdown_mode:
+                self.in_drawdown_mode = True
+                logger.warning(f"⚠️ DRAWDOWN PROTECTION ACTIVATED: {self.drawdown_pct:.1f}% drawdown from peak ${self.peak_balance:.2f}")
+                logger.warning(f"   Position sizes reduced by {(1-self.risk.drawdown_reduction_factor)*100:.0f}%")
+    
     def can_execute(self) -> tuple[bool, str]:
         """Check if execution is allowed"""
         if self.killed:
@@ -148,7 +200,14 @@ class ExecutionEngine:
         return True, "OK"
     
     def calculate_position_size(self, symbol: str, price: float, signal: AggregatedSignal) -> float:
-        """Calculate position size based on risk parameters"""
+        """
+        Calculate position size based on risk parameters.
+        
+        OPTIMIZATIONS:
+        - Strategy performance multipliers (boost winners, reduce losers)
+        - Drawdown protection (reduce size when account is down)
+        - Consensus bonus (multiple strategies = higher conviction)
+        """
         if self.account_balance <= 0:
             return 0
         
@@ -161,6 +220,19 @@ class ExecutionEngine:
         # Adjust by consensus (more strategies agree = larger position)
         position_value *= (0.8 + 0.2 * signal.consensus_score)
         
+        # STRATEGY BOOST: Amplify winners, reduce losers based on track record
+        strategy_id = signal.signal.strategy_id
+        strategy_multiplier = self.risk.strategy_boost_multipliers.get(strategy_id, 1.0)
+        if strategy_multiplier == 0:
+            logger.info(f"🚫 Blocking signal from disabled strategy: {strategy_id}")
+            return 0
+        position_value *= strategy_multiplier
+        
+        # DRAWDOWN PROTECTION: Reduce size when in drawdown
+        if self.in_drawdown_mode:
+            position_value *= self.risk.drawdown_reduction_factor
+            logger.info(f"📉 Drawdown mode: Position reduced by {(1-self.risk.drawdown_reduction_factor)*100:.0f}%")
+        
         # Apply leverage
         leveraged_value = position_value * self.risk.default_leverage
         
@@ -171,6 +243,13 @@ class ExecutionEngine:
         # Ensure minimum order value
         if contracts * price < self.risk.min_order_value_usd:
             return 0
+        
+        # Log sizing decision
+        logger.debug(f"Position sizing: {symbol} via {strategy_id}: "
+                    f"base=${self.account_balance * self.risk.max_position_pct / 100:.2f}, "
+                    f"confidence={signal.adjusted_confidence:.2f}, "
+                    f"strategy_mult={strategy_multiplier:.1f}, "
+                    f"final=${position_value:.2f}")
         
         return contracts
     
@@ -424,6 +503,14 @@ class ExecutionEngine:
                 'trades': self.daily_stats.trades,
                 'pnl': self.daily_stats.pnl
             },
+            'drawdown_protection': {
+                'peak_balance': self.peak_balance,
+                'current_drawdown_pct': self.drawdown_pct,
+                'in_drawdown_mode': self.in_drawdown_mode,
+                'threshold_pct': self.risk.drawdown_threshold_pct,
+                'reduction_factor': self.risk.drawdown_reduction_factor
+            },
+            'strategy_multipliers': self.risk.strategy_boost_multipliers,
             'risk_config': {
                 'max_position_pct': self.risk.max_position_pct,
                 'max_total_exposure_pct': self.risk.max_total_exposure_pct,
@@ -432,3 +519,41 @@ class ExecutionEngine:
                 'default_leverage': self.risk.default_leverage
             }
         }
+    
+    def update_strategy_multipliers(self, performance_data: Dict[str, Dict]):
+        """
+        Dynamically update strategy multipliers based on actual performance.
+        Called by orchestrator when it has fresh performance data.
+        
+        Args:
+            performance_data: Dict of strategy_id -> {'win_rate': float, 'total_pnl': float, 'trades': int}
+        """
+        for strategy_id, perf in performance_data.items():
+            win_rate = perf.get('win_rate', 0.5)
+            total_pnl = perf.get('total_pnl', 0)
+            trades = perf.get('trades', 0)
+            
+            # Need minimum trades to adjust
+            if trades < 10:
+                continue
+            
+            # Calculate multiplier based on performance
+            # Base: 1.0, Range: 0.0 (disabled) to 2.0 (double size)
+            if win_rate < 0.35:
+                # Terrible WR (<35%) - disable this strategy
+                multiplier = 0.0
+                logger.warning(f"🚫 Disabling {strategy_id}: {win_rate:.0%} WR is unacceptable")
+            elif win_rate < 0.45:
+                # Poor WR - heavily reduce
+                multiplier = 0.5
+            elif total_pnl < 0:
+                # Negative P&L despite decent WR - bad R:R, reduce
+                multiplier = 0.7
+            elif win_rate >= 0.50 and total_pnl > 0:
+                # Winner: good WR + positive P&L
+                multiplier = 1.0 + min(0.5, total_pnl / 500)  # Up to 1.5x
+            else:
+                multiplier = 1.0
+            
+            self.risk.strategy_boost_multipliers[strategy_id] = multiplier
+            logger.info(f"📊 Strategy {strategy_id}: WR={win_rate:.0%}, PnL=${total_pnl:.0f} -> multiplier={multiplier:.1f}x")
