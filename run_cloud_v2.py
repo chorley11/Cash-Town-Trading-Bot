@@ -47,8 +47,8 @@ ALL_SYMBOLS = [
     'INJUSDTM', 'TIAUSDTM', 'RENDERUSDTM', 'SUIUSDTM', 'TONUSDTM', 'ICPUSDTM',
 ]
 
-# OPTIMIZED: Removed zweig (14% WR = bleeding money)
 # Performance-ranked: trend-following is the star (+$208, 51% WR)
+# FIXED: zweig re-enabled with major fixes (see agents/strategies/zweig.py)
 AGENT_CONFIGS = [
     {'id': 'trend-following', 'symbols': ALL_SYMBOLS, 'interval': 300},  # STAR: 51% WR, +$208
     {'id': 'mean-reversion', 'symbols': ALL_SYMBOLS, 'interval': 300},
@@ -56,7 +56,7 @@ AGENT_CONFIGS = [
     {'id': 'weinstein', 'symbols': ALL_SYMBOLS, 'interval': 300},
     {'id': 'livermore', 'symbols': ALL_SYMBOLS, 'interval': 300},
     {'id': 'bts-lynch', 'symbols': ALL_SYMBOLS, 'interval': 300},
-    # REMOVED: 'zweig' - 14% WR, consistent loser
+    {'id': 'zweig', 'symbols': ALL_SYMBOLS, 'interval': 300},  # FIXED: v2 with thrust detection
 ]
 
 class CloudRunnerV2:
@@ -155,6 +155,12 @@ class CloudRunnerV2:
                 elif self.path == '/multipliers':
                     # Endpoint for executor to get dynamic strategy multipliers
                     self._respond(200, orchestrator.get_strategy_multipliers())
+                elif self.path == '/counterfactual':
+                    # Analyze historical counterfactual data
+                    self._respond(200, orchestrator.analyze_counterfactuals())
+                elif self.path == '/rescue_stats':
+                    # Second-chance rescue statistics
+                    self._respond(200, orchestrator.rescue_stats)
                 else:
                     self._respond(404, {'error': 'Not found'})
             

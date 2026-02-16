@@ -7,6 +7,7 @@ Key improvements:
 3. Clears signals after processing
 4. Integrates reflection for self-improvement
 5. Tracks what would have happened with rejected signals
+6. SECOND CHANCE LOGIC: Rescues promising signals that were initially rejected
 """
 import json
 import os
@@ -17,6 +18,7 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 
 from .signal_aggregator import SignalAggregator, AggregatorConfig, AggregatedSignal
+from .second_chance import SecondChanceEvaluator
 from agents.base import Signal, SignalSide
 
 logger = logging.getLogger(__name__)
@@ -87,6 +89,12 @@ class SmartOrchestrator:
         
         # Load strategy performance
         self._load_strategy_performance()
+        
+        # SECOND CHANCE: Rescue promising signals that were initially rejected
+        self.second_chance = SecondChanceEvaluator(self.strategy_performance)
+        
+        # Track rescued signals stats
+        self.rescue_stats = {'total_rescued': 0, 'rescued_wins': 0, 'rescued_losses': 0}
     
     def receive_signal(self, strategy_id: str, signal_data: dict):
         """Receive a signal from a strategy agent"""
@@ -116,7 +124,7 @@ class SmartOrchestrator:
     def get_actionable_signals(self) -> List[AggregatedSignal]:
         """
         Process raw signals and return only the best ones for execution.
-        Also logs all signals for learning.
+        Also logs all signals for learning and applies SECOND CHANCE logic.
         """
         if not self.raw_signals:
             return []
@@ -127,10 +135,63 @@ class SmartOrchestrator:
             k: v.get('score', 0) for k, v in self.strategy_performance.items()
         })
         
-        # Aggregate signals
+        # Aggregate signals (first pass)
         aggregated = self.aggregator.aggregate(self.raw_signals)
+        selected_symbols = {s.symbol for s in aggregated}
         
-        # Log ALL signals (selected and rejected) for learning
+        # ==========================================
+        # SECOND CHANCE LOGIC: Rescue promising rejects
+        # ==========================================
+        rescued_signals = []
+        for strategy_id, signals in self.raw_signals.items():
+            for signal in signals:
+                if signal.symbol not in selected_symbols:
+                    rejection_reason = self._get_rejection_reason(signal)
+                    
+                    # Skip if already in position (can't rescue)
+                    if signal.symbol in self.positions:
+                        continue
+                    
+                    # Evaluate for second chance
+                    should_rescue, adj_conf, boost_reasons = self.second_chance.evaluate_for_second_chance(
+                        signal, rejection_reason, self.raw_signals
+                    )
+                    
+                    if should_rescue:
+                        logger.info(f"🎯 SECOND CHANCE: Rescuing {strategy_id} {signal.side.value} "
+                                   f"{signal.symbol} ({signal.confidence:.0%} -> {adj_conf:.0%})")
+                        for reason in boost_reasons:
+                            logger.debug(f"   ↳ {reason}")
+                        
+                        # Create aggregated signal from rescued signal
+                        signal.confidence = adj_conf  # Boost confidence
+                        signal.metadata['rescued'] = True
+                        signal.metadata['original_confidence'] = signal.confidence
+                        signal.metadata['boost_reasons'] = boost_reasons
+                        
+                        rescued_agg = AggregatedSignal(
+                            signal=signal,
+                            rank=len(aggregated) + len(rescued_signals) + 1,
+                            sources=[strategy_id],
+                            conflicts=[],
+                            consensus_score=1.0,
+                            adjusted_confidence=adj_conf
+                        )
+                        rescued_signals.append(rescued_agg)
+                        selected_symbols.add(signal.symbol)
+                        self.rescue_stats['total_rescued'] += 1
+        
+        # Add rescued signals to aggregated list
+        if rescued_signals:
+            logger.info(f"🎯 Rescued {len(rescued_signals)} signals via second-chance logic")
+            aggregated.extend(rescued_signals)
+            # Re-sort by adjusted confidence
+            aggregated.sort(key=lambda s: s.adjusted_confidence, reverse=True)
+            # Re-assign ranks
+            for i, sig in enumerate(aggregated):
+                sig.rank = i + 1
+        
+        # Log ALL signals (selected, rescued, and rejected) for learning
         self._log_all_signals(aggregated)
         
         # Mark selected symbols for cooldown
@@ -140,7 +201,7 @@ class SmartOrchestrator:
         # Clear raw signals (they've been processed)
         self.raw_signals.clear()
         
-        logger.info(f"Selected {len(aggregated)} signals from pool")
+        logger.info(f"Selected {len(aggregated)} signals (incl. {len(rescued_signals)} rescued)")
         
         return aggregated
     
@@ -210,7 +271,8 @@ class SmartOrchestrator:
             logger.error(f"Error saving signal record: {e}")
     
     def record_trade_result(self, symbol: str, side: str, pnl: float, 
-                           pnl_pct: float, strategy_id: str, reason: str):
+                           pnl_pct: float, strategy_id: str, reason: str,
+                           was_rescued: bool = False):
         """Record a completed trade for learning"""
         record = {
             'timestamp': datetime.utcnow().isoformat(),
@@ -220,7 +282,8 @@ class SmartOrchestrator:
             'pnl_pct': pnl_pct,
             'strategy_id': strategy_id,
             'exit_reason': reason,
-            'won': pnl > 0
+            'won': pnl > 0,
+            'was_rescued': was_rescued
         }
         
         try:
@@ -228,6 +291,15 @@ class SmartOrchestrator:
                 f.write(json.dumps(record) + '\n')
         except Exception as e:
             logger.error(f"Error saving trade record: {e}")
+        
+        # Track rescued signal performance
+        if was_rescued:
+            if pnl > 0:
+                self.rescue_stats['rescued_wins'] += 1
+                logger.info(f"🎯 RESCUED WIN: {symbol} +{pnl_pct:.1f}%")
+            else:
+                self.rescue_stats['rescued_losses'] += 1
+                logger.info(f"🎯 RESCUED LOSS: {symbol} {pnl_pct:.1f}%")
         
         # Update strategy performance
         self._update_strategy_performance(strategy_id, pnl > 0, pnl_pct)
@@ -298,6 +370,7 @@ class SmartOrchestrator:
         """
         Update counterfactual tracking for rejected signals.
         Call this periodically to see what would have happened.
+        Also updates second-chance near-miss tracking.
         """
         now = datetime.utcnow()
         completed = []
@@ -336,6 +409,9 @@ class SmartOrchestrator:
         # Remove completed records
         for record in completed:
             self.pending_counterfactual.remove(record)
+        
+        # Also update second-chance near-miss tracking
+        self.second_chance.update_counterfactuals(current_prices)
     
     def _save_counterfactual(self, record: SignalRecord):
         """Save counterfactual analysis result"""
@@ -351,6 +427,13 @@ class SmartOrchestrator:
             'strategy_performance': self.strategy_performance,
             'strategy_multipliers': self.get_strategy_multipliers(),
             'pending_counterfactuals': len(self.pending_counterfactual),
+            'second_chance': {
+                'total_rescued': self.rescue_stats['total_rescued'],
+                'rescued_wins': self.rescue_stats['rescued_wins'],
+                'rescued_losses': self.rescue_stats['rescued_losses'],
+                'winning_patterns': len(self.second_chance.winning_patterns),
+                'pending_near_misses': len(self.second_chance.near_miss_signals),
+            },
             'data_files': {
                 'signals': str(SIGNALS_LOG),
                 'trades': str(TRADES_LOG),
@@ -371,7 +454,7 @@ class SmartOrchestrator:
             'weinstein': 1.0,
             'livermore': 1.0,
             'bts-lynch': 0.8,
-            'zweig': 0.0,  # DISABLED: 14% WR
+            'zweig': 0.7,  # FIXED v2: Probationary - thrust detection + trend confirmation
         }
         
         # Override with learned multipliers where available
@@ -380,3 +463,86 @@ class SmartOrchestrator:
                 multipliers[strategy_id] = perf['multiplier']
         
         return multipliers
+    
+    def analyze_counterfactuals(self) -> Dict:
+        """
+        Analyze historical counterfactual data to identify winning rejection patterns.
+        Call this periodically (e.g., daily) to learn from past decisions.
+        
+        Returns summary of patterns found and potential improvements.
+        """
+        result = {
+            'timestamp': datetime.utcnow().isoformat(),
+            'counterfactual_analysis': {},
+            'pattern_analysis': {},
+            'recommendations': []
+        }
+        
+        # Analyze main counterfactual log
+        if COUNTERFACTUAL_LOG.exists():
+            try:
+                winners = []
+                losers = []
+                by_reason = {}
+                
+                with open(COUNTERFACTUAL_LOG, 'r') as f:
+                    for line in f:
+                        try:
+                            record = json.loads(line)
+                            if record.get('would_have_won') is None:
+                                continue
+                            
+                            reason = record.get('selection_reason', 'unknown')
+                            if reason not in by_reason:
+                                by_reason[reason] = {'wins': 0, 'losses': 0, 'total_pnl': 0}
+                            
+                            if record.get('would_have_won'):
+                                winners.append(record)
+                                by_reason[reason]['wins'] += 1
+                            else:
+                                losers.append(record)
+                                by_reason[reason]['losses'] += 1
+                            
+                            by_reason[reason]['total_pnl'] += record.get('potential_pnl', 0)
+                        except:
+                            continue
+                
+                total = len(winners) + len(losers)
+                result['counterfactual_analysis'] = {
+                    'total_rejections_tracked': total,
+                    'would_have_won': len(winners),
+                    'would_have_lost': len(losers),
+                    'hypothetical_win_rate': len(winners) / total if total > 0 else 0,
+                    'by_rejection_reason': by_reason
+                }
+                
+                # Generate recommendations based on analysis
+                for reason, stats in by_reason.items():
+                    total_for_reason = stats['wins'] + stats['losses']
+                    if total_for_reason >= 5:
+                        win_rate = stats['wins'] / total_for_reason
+                        if win_rate >= 0.60:
+                            result['recommendations'].append({
+                                'type': 'REDUCE_FALSE_NEGATIVES',
+                                'reason': reason,
+                                'win_rate': f"{win_rate:.0%}",
+                                'sample_size': total_for_reason,
+                                'suggestion': f"Signals rejected for '{reason}' win {win_rate:.0%} of the time. Consider relaxing this filter."
+                            })
+                        elif win_rate <= 0.35:
+                            result['recommendations'].append({
+                                'type': 'GOOD_REJECTION',
+                                'reason': reason,
+                                'win_rate': f"{win_rate:.0%}",
+                                'sample_size': total_for_reason,
+                                'suggestion': f"Rejecting '{reason}' is correct - only {win_rate:.0%} would have won."
+                            })
+            except Exception as e:
+                result['counterfactual_analysis'] = {'error': str(e)}
+        else:
+            result['counterfactual_analysis'] = {'status': 'no_data_yet'}
+        
+        # Analyze second-chance patterns
+        result['pattern_analysis'] = self.second_chance.analyze_historical_rejections(COUNTERFACTUAL_LOG)
+        
+        return result

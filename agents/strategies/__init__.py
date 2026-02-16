@@ -1,5 +1,5 @@
 """
-Gas Town Strategy Agents
+Cash Town Strategy Agents
 Each agent implements one trading strategy independently.
 """
 from .bts_lynch import BTSLynchAgent
@@ -10,6 +10,7 @@ from .turtle import TurtleAgent
 from .weinstein import WeinsteinAgent
 from .livermore import LivermoreAgent
 from .stat_arb import StatArbAgent
+from .rsi_divergence import RSIDivergenceAgent
 
 __all__ = [
     'BTSLynchAgent',
@@ -20,6 +21,7 @@ __all__ = [
     'WeinsteinAgent',
     'LivermoreAgent',
     'StatArbAgent',
+    'RSIDivergenceAgent',
     'STRATEGY_REGISTRY',
 ]
 
@@ -33,4 +35,5 @@ STRATEGY_REGISTRY = {
     'weinstein': WeinsteinAgent,
     'livermore': LivermoreAgent,
     'stat-arb': StatArbAgent,
+    'rsi-divergence': RSIDivergenceAgent,
 }
