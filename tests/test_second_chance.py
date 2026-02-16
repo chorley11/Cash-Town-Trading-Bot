@@ -306,30 +306,37 @@ class TestCounterfactualUpdates:
 class TestLearningFromWinningRejections:
     """Tests for learning from winning rejected signals"""
     
-    def test_learn_from_winning_rejection_creates_pattern(self, second_chance_evaluator, test_data_dir):
+    def test_learn_from_winning_rejection_creates_pattern(self, test_data_dir):
         """Should create new pattern when winning rejection identified"""
-        initial_patterns = len(second_chance_evaluator.winning_patterns)
+        # Create fresh evaluator with no existing patterns
+        evaluator = SecondChanceEvaluator({})
+        evaluator.winning_patterns = []  # Clear any loaded patterns
+        
+        initial_patterns = len(evaluator.winning_patterns)
         
         near_miss = NearMissSignal(
             timestamp=datetime.utcnow().isoformat(),
-            strategy_id='test-strategy',
+            strategy_id='unique-test-strategy',
             symbol='BTC-USDT',
             side='long',
             original_confidence=0.52,
             adjusted_confidence=0.52,
-            rejection_reason='Low confidence',
+            rejection_reason='Unique rejection reason for test',
             rescued=False,
             entry_price=50000.0,
             would_have_won=True
         )
         
-        second_chance_evaluator._learn_from_winning_rejection(near_miss)
+        evaluator._learn_from_winning_rejection(near_miss)
         
-        assert len(second_chance_evaluator.winning_patterns) == initial_patterns + 1
+        assert len(evaluator.winning_patterns) == initial_patterns + 1
     
-    def test_learn_updates_existing_pattern(self, second_chance_evaluator, winning_pattern):
+    def test_learn_updates_existing_pattern(self, winning_pattern):
         """Should update existing pattern if match found"""
-        second_chance_evaluator.winning_patterns.append(winning_pattern)
+        # Create fresh evaluator
+        evaluator = SecondChanceEvaluator({})
+        evaluator.winning_patterns = [winning_pattern]  # Add our test pattern
+        
         initial_sample_size = winning_pattern.sample_size
         
         near_miss = NearMissSignal(
@@ -345,7 +352,7 @@ class TestLearningFromWinningRejections:
             would_have_won=True
         )
         
-        second_chance_evaluator._learn_from_winning_rejection(near_miss)
+        evaluator._learn_from_winning_rejection(near_miss)
         
         assert winning_pattern.sample_size == initial_sample_size + 1
 

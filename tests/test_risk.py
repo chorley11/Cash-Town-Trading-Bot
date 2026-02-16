@@ -254,6 +254,8 @@ class TestPositionStates:
         """Position should be STALE if held too long"""
         rotation_config.grace_period_minutes = 5
         rotation_config.max_hold_hours = 24
+        rotation_config.stuck_max_minutes = 60
+        rotation_config.stuck_threshold_pct = 2.0  # High threshold to avoid WINNING state
         pm = PositionManager(rotation_config)
         
         pos = TrackedPosition(
@@ -263,10 +265,13 @@ class TestPositionStates:
             entry_price=50000.0,
             entry_time=datetime.utcnow() - timedelta(hours=48),  # 2 days old
             size=0.1,
-            peak_pnl_pct=0.5  # Has been profitable enough to not be stuck
+            peak_pnl_pct=3.0,  # Was profitable enough to not be stuck
+            peak_pnl=150.0  # Corresponding dollar value (entry * size * pct/100)
         )
         pm.track_position(pos)
-        pm.update_price('BTC-USDT', 50200.0)
+        # Price gives 1% profit - above 0 (not losing) but below 2% stuck_threshold (not winning)
+        # Also peak_pnl_pct (3.0) > stuck_threshold (2.0) so not STUCK
+        pm.update_price('BTC-USDT', 50500.0)  
         
         assert pos.state == PositionState.STALE
 

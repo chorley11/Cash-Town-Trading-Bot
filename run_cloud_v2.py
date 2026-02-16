@@ -39,6 +39,10 @@ from agents.strategies import STRATEGY_REGISTRY
 from utils.validation import validate_signal_data, validate_trade_result, redact_sensitive_data
 from utils.monitoring import get_monitor, PerformanceMonitor
 
+# BLOOMBERG DASHBOARD API
+from api.endpoints import DashboardAPI
+from api.websocket import LiveFeed
+
 # Data directory for learning
 DATA_DIR = Path(os.environ.get('DATA_DIR', '/app/data'))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -87,6 +91,16 @@ class CloudRunnerV2:
         self.executor_thread = None
         self.http_thread = None
         
+        # Bloomberg Dashboard API
+        self.dashboard_api = DashboardAPI()
+        self.live_feed = LiveFeed()
+        
+        # Execution engine reference (set in _start_executor)
+        self.engine = None
+        
+        # Data feed reference (set in _start_data_feed)
+        self.data_feed = None
+        
     def start(self):
         """Start all components"""
         self.running = True
@@ -110,6 +124,9 @@ class CloudRunnerV2:
         # Start executor
         self._start_executor()
         
+        # Start watchdog background loop
+        self._start_watchdog()
+        
         # Main loop - just keep running
         try:
             while self.running:
@@ -118,6 +135,72 @@ class CloudRunnerV2:
             pass
         finally:
             self.stop()
+    
+    def _start_watchdog(self):
+        """Start the profit watchdog background loop"""
+        logger.info("🐕 Starting Profit Watchdog...")
+        
+        def watchdog_loop():
+            from orchestrator.profit_watchdog import run_watchdog_cycle
+            
+            while self.running:
+                try:
+                    # Get current prices for outcome tracking
+                    prices = self._get_current_prices()
+                    if prices:
+                        run_watchdog_cycle(self.orchestrator.watchdog, prices)
+                except Exception as e:
+                    logger.error(f"Watchdog cycle error: {e}")
+                
+                # Run every 5 minutes
+                for _ in range(300):
+                    if not self.running:
+                        break
+                    time.sleep(1)
+        
+        watchdog_thread = threading.Thread(
+            target=watchdog_loop,
+            daemon=True,
+            name="watchdog"
+        )
+        watchdog_thread.start()
+        logger.info("  ✅ Watchdog running")
+    
+    def _get_current_prices(self) -> dict:
+        """Get current prices for watchdog outcome tracking"""
+        try:
+            from execution.kucoin import KuCoinFuturesExecutor
+            executor = KuCoinFuturesExecutor()
+            if not executor.is_configured:
+                return {}
+            
+            prices = {}
+            # Get prices for symbols we're tracking
+            symbols = set()
+            
+            # From positions
+            for symbol in self.orchestrator.positions:
+                symbols.add(symbol)
+            
+            # From watchdog pending outcomes
+            for record in self.orchestrator.watchdog.pending_outcomes:
+                symbols.add(record.symbol)
+            
+            # Fetch prices
+            for symbol in symbols:
+                if not symbol:
+                    continue
+                try:
+                    ticker = executor.client.get_ticker(symbol)
+                    if ticker and 'price' in ticker:
+                        prices[symbol] = float(ticker['price'])
+                except:
+                    pass
+            
+            return prices
+        except Exception as e:
+            logger.debug(f"Could not fetch prices: {e}")
+            return {}
     
     def _start_http_server(self):
         """Start HTTP server for receiving signals"""
@@ -179,6 +262,27 @@ class CloudRunnerV2:
                     # Check if trading is allowed (circuit breaker)
                     can, reason = orchestrator.can_trade()
                     self._respond(200, {'can_trade': can, 'reason': reason})
+                elif self.path == '/watchdog':
+                    # PROFIT WATCHDOG: Full analysis status
+                    self._respond(200, orchestrator.watchdog.get_status())
+                elif self.path == '/watchdog/decisions':
+                    # Recent decisions with outcomes
+                    self._respond(200, {'decisions': orchestrator.watchdog.get_recent_decisions(50)})
+                elif self.path == '/watchdog/alerts':
+                    # Active watchdog alerts
+                    from dataclasses import asdict
+                    alerts = orchestrator.watchdog.generate_alerts()
+                    self._respond(200, {'alerts': [asdict(a) for a in alerts]})
+                elif self.path == '/watchdog/recommendations':
+                    # Parameter recommendations
+                    from dataclasses import asdict
+                    recs = orchestrator.watchdog.analyze_and_recommend()
+                    self._respond(200, {'recommendations': [asdict(r) for r in recs]})
+                elif self.path == '/watchdog/drift':
+                    # Strategy drift analysis
+                    from dataclasses import asdict
+                    drifts = orchestrator.watchdog.detect_strategy_drift()
+                    self._respond(200, {'strategy_drift': [asdict(d) for d in drifts]})
                 else:
                     self._respond(404, {'error': 'Not found'})
             
@@ -246,6 +350,40 @@ class CloudRunnerV2:
                     except Exception as e:
                         logger.error(f"Trade result processing error: {e}")
                         self._respond(500, {'error': 'Internal error'})
+                        
+                elif self.path == '/watchdog/tune':
+                    # Trigger auto-tuning
+                    content_length = int(self.headers.get('Content-Length', 0))
+                    body = self.rfile.read(content_length).decode('utf-8') if content_length > 0 else '{}'
+                    try:
+                        data = json.loads(body)
+                        dry_run = data.get('dry_run', True)
+                        changes = orchestrator.watchdog.auto_tune(dry_run=dry_run)
+                        self._respond(200, {
+                            'success': True,
+                            'dry_run': dry_run,
+                            'changes': changes
+                        })
+                    except Exception as e:
+                        self._respond(500, {'error': str(e)})
+                        
+                elif self.path == '/watchdog/baseline':
+                    # Update strategy baseline
+                    content_length = int(self.headers.get('Content-Length', 0))
+                    body = self.rfile.read(content_length).decode('utf-8')
+                    try:
+                        data = json.loads(body)
+                        orchestrator.watchdog.update_baseline(
+                            strategy_id=data['strategy_id'],
+                            win_rate=data['win_rate'],
+                            trades=data['trades'],
+                            pnl=data.get('pnl', 0)
+                        )
+                        self._respond(200, {'success': True})
+                    except KeyError as e:
+                        self._respond(400, {'error': f'Missing field: {e}'})
+                    except Exception as e:
+                        self._respond(500, {'error': str(e)})
                 else:
                     self._respond(404, {'error': 'Not found'})
             
