@@ -112,6 +112,19 @@ class AgentRunner:
     def _report_signal(self, signal: Signal):
         """Report a signal to the orchestrator"""
         try:
+            # Convert metadata to JSON-safe types (handle numpy bools, etc.)
+            safe_metadata = {}
+            if signal.metadata:
+                for k, v in signal.metadata.items():
+                    if hasattr(v, 'item'):  # numpy types
+                        safe_metadata[k] = v.item()
+                    elif isinstance(v, bool):
+                        safe_metadata[k] = bool(v)
+                    elif isinstance(v, (int, float, str, type(None))):
+                        safe_metadata[k] = v
+                    else:
+                        safe_metadata[k] = str(v)
+            
             signal_data = {
                 'strategy_id': self.strategy_id,
                 'symbol': signal.symbol,
@@ -122,7 +135,7 @@ class AgentRunner:
                 'take_profit': signal.take_profit,
                 'reason': signal.reason,
                 'timestamp': signal.timestamp.isoformat(),
-                'metadata': signal.metadata
+                'metadata': safe_metadata
             }
             
             self.logger.info(f"📊 Signal: {signal.side.value.upper()} {signal.symbol} @ ${signal.price:,.2f} ({signal.confidence:.0%})")
