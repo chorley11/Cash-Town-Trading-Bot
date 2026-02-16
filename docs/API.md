@@ -1,492 +1,703 @@
-# Cash Town Bloomberg Dashboard API
+# 🔌 API Reference
 
-Comprehensive REST API for family office-grade trading dashboard.
+Complete API documentation for Cash Town's HTTP endpoints.
+
+---
 
 ## Base URL
 
 ```
-http://localhost:8888/api
+http://localhost:8888
 ```
 
-## Authentication
-
-Currently no authentication required (internal use only).
+Or in production:
+```
+https://your-railway-deployment.railway.app
+```
 
 ---
 
-## Portfolio Endpoints
+## Health & Status
 
-### GET /api/portfolio
+### GET /health
 
-Complete portfolio overview including equity, P&L, exposure, and risk metrics.
+Health check endpoint.
 
 **Response:**
 ```json
 {
-  "success": true,
-  "data": {
-    "timestamp": "2024-02-16T12:00:00Z",
-    "equity": {
-      "total": 10000.00,
-      "available": 8500.00,
-      "margin_used": 1500.00,
-      "currency": "USDT"
+  "status": "healthy"
+}
+```
+
+---
+
+### GET /perf
+
+Performance monitoring metrics.
+
+**Response:**
+```json
+{
+  "total_cycles": 150,
+  "cycle_time_ms": {
+    "avg": 1500,
+    "min": 200,
+    "max": 8000,
+    "p50": 1200,
+    "p95": 3500,
+    "p99": 6000
+  },
+  "memory_mb": {
+    "initial": 150.5,
+    "current": 185.2,
+    "peak": 210.0,
+    "growth": 34.7
+  },
+  "signals": {
+    "total_generated": 500,
+    "total_executed": 50,
+    "avg_per_cycle": 3.3
+  },
+  "errors": {
+    "total_error_cycles": 3,
+    "error_rate": 0.02
+  },
+  "last_10_cycles": [
+    {"cycle_id": 150, "duration_ms": 1200, "signals": 2, "errors": 0},
+    {"cycle_id": 149, "duration_ms": 1500, "signals": 3, "errors": 0}
+  ]
+}
+```
+
+---
+
+### GET /risk
+
+Risk manager status.
+
+**Response:**
+```json
+{
+  "equity": 10000.0,
+  "peak_equity": 10500.0,
+  "portfolio_heat": {
+    "total_risk_pct": 4.5,
+    "max_risk_pct": 10.0,
+    "position_count": 3,
+    "correlated_exposure": {
+      "alt_l1": 2.0,
+      "eth_ecosystem": 1.5
     },
-    "pnl": {
-      "unrealized": 250.00,
-      "unrealized_pct": 2.5,
-      "realized_today": 150.00,
-      "realized_all_time": 2500.00
-    },
-    "exposure": {
-      "total_notional": 15000.00,
-      "net_exposure": 5000.00,
-      "long_exposure": 10000.00,
-      "short_exposure": 5000.00,
-      "exposure_pct": 15.0
-    },
-    "positions": {
-      "count": 3,
-      "long_count": 2,
-      "short_count": 1
-    },
-    "risk": {
-      "max_drawdown_pct": 10.0,
-      "current_drawdown_pct": 2.5,
-      "daily_loss_pct": 0.5,
-      "circuit_breaker_active": false
-    },
-    "performance": {
-      "win_rate": 52.3,
-      "profit_factor": 1.45,
-      "sharpe_estimate": 0.85,
-      "trades_today": 5
+    "is_overheated": false
+  },
+  "circuit_breaker": {
+    "is_triggered": false,
+    "trigger_reason": "",
+    "daily_loss_pct": 1.2,
+    "drawdown_pct": 3.0,
+    "cooldown_until": null
+  },
+  "daily_stats": {
+    "date": "2025-02-16",
+    "starting_equity": 10200.0,
+    "trades": 5,
+    "wins": 3,
+    "losses": 2,
+    "pnl": 50.0
+  },
+  "strategy_stats": {
+    "trend-following": {
+      "trades": 25,
+      "wins": 14,
+      "losses": 11,
+      "avg_win_pct": 2.5,
+      "avg_loss_pct": 1.8
     }
   },
-  "metadata": {"source": "live", "cached": false}
-}
-```
-
-### GET /api/summary
-
-Quick summary for dashboard header display.
-
-**Response:**
-```json
-{
-  "equity": 10000.00,
-  "pnl": 250.00,
-  "pnl_pct": 2.5,
-  "positions": 3,
-  "exposure_pct": 15.0,
-  "win_rate": 52.3,
-  "circuit_breaker": false,
-  "timestamp": "2024-02-16T12:00:00Z"
-}
-```
-
----
-
-## Position Endpoints
-
-### GET /api/positions
-
-All open positions with live data.
-
-**Query Parameters:**
-- `include_closed` (bool): Include recently closed positions
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": [
-    {
-      "symbol": "XBTUSDTM",
+  "positions": {
+    "ETHUSDTM": {
       "side": "long",
-      "size": 100,
-      "entry_price": 45000.00,
-      "current_price": 45500.00,
-      "leverage": 5,
-      "margin": 900.00,
-      "unrealized_pnl": 50.00,
-      "unrealized_pnl_pct": 1.11,
-      "liquidation_price": 40000.00,
-      "stop_loss": 44000.00,
-      "take_profit": 47000.00,
-      "strategy_id": "trend-following",
-      "age_hours": 4.5,
-      "entry_time": "2024-02-16T07:30:00Z",
-      "status": "open"
+      "risk_pct": 1.5,
+      "correlation_group": "eth_ecosystem",
+      "strategy": "trend-following"
     }
-  ],
-  "metadata": {
-    "timestamp": "2024-02-16T12:00:00Z",
-    "count": 1,
-    "filters": {"include_closed": false}
+  },
+  "config": {
+    "max_position_risk_pct": 2.0,
+    "max_total_risk_pct": 10.0,
+    "use_kelly": true,
+    "kelly_fraction": 0.25,
+    "max_daily_loss_pct": 5.0,
+    "max_drawdown_pct": 15.0
   }
 }
 ```
 
-### GET /api/position/:symbol
+---
 
-Detailed view of a single position.
+### GET /can_trade
 
-**Path Parameters:**
-- `symbol`: Trading symbol (e.g., XBTUSDTM)
+Check if circuit breaker allows trading.
+
+**Response (trading allowed):**
+```json
+{
+  "can_trade": true,
+  "reason": "OK"
+}
+```
+
+**Response (trading halted):**
+```json
+{
+  "can_trade": false,
+  "reason": "Circuit breaker: Daily loss limit: 5.2% >= 5.0% (cooldown 180m)"
+}
+```
 
 ---
 
-## Trade History Endpoints
+## Signals & Learning
 
-### GET /api/trades
+### GET /signals
 
-Historical trades with comprehensive filters and pagination.
-
-**Query Parameters:**
-- `strategy` (string): Filter by strategy ID
-- `symbol` (string): Filter by symbol
-- `side` (string): Filter by side (long/short)
-- `start_date` (string): Start date (YYYY-MM-DD)
-- `end_date` (string): End date (YYYY-MM-DD)
-- `min_pnl` (float): Minimum P&L filter
-- `max_pnl` (float): Maximum P&L filter
-- `won_only` (bool): Filter winners/losers only
-- `limit` (int): Results per page (default: 100)
-- `offset` (int): Pagination offset (default: 0)
+Get aggregated actionable signals for execution.
 
 **Response:**
 ```json
 {
-  "success": true,
-  "data": [
+  "count": 2,
+  "signals": [
     {
-      "timestamp": "2024-02-16T10:00:00Z",
       "symbol": "ETHUSDTM",
       "side": "long",
-      "strategy_id": "mean-reversion",
-      "entry_price": 2500.00,
-      "exit_price": 2550.00,
-      "size": 50,
-      "pnl": 25.00,
-      "pnl_pct": 2.0,
-      "won": true,
-      "status": "closed"
-    }
-  ],
-  "metadata": {
-    "timestamp": "2024-02-16T12:00:00Z",
-    "total_count": 150,
-    "returned_count": 100,
-    "offset": 0,
-    "limit": 100,
-    "has_more": true,
-    "filters_applied": {...},
-    "aggregates": {
-      "total_pnl": 2500.00,
-      "win_count": 78,
-      "loss_count": 72,
-      "win_rate": 52.0
-    }
-  }
-}
-```
-
-### GET /api/trade/:id
-
-Single trade details with full context.
-
-**Path Parameters:**
-- `id`: Trade ID (timestamp_symbol format)
-
----
-
-## Strategy Endpoints
-
-### GET /api/strategies
-
-Performance breakdown by strategy.
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": [
-    {
+      "confidence": 0.72,
+      "price": 3250.50,
+      "stop_loss": 3185.00,
+      "take_profit": 3510.00,
+      "reason": "Trend following: EMA cross, ADX=32",
       "strategy_id": "trend-following",
-      "trades": 45,
-      "wins": 24,
-      "win_rate": 53.3,
-      "total_pnl": 208.50,
-      "avg_pnl": 4.63,
-      "max_win": 85.00,
-      "max_loss": -42.00,
-      "score": 1.15,
-      "multiplier": 1.5,
-      "status": "active",
-      "active_positions": 2
-    }
-  ],
-  "metadata": {
-    "timestamp": "2024-02-16T12:00:00Z",
-    "count": 8
-  }
-}
-```
-
-### GET /api/strategy/:id
-
-Detailed strategy view with trade history.
-
-**Path Parameters:**
-- `id`: Strategy ID (e.g., trend-following)
-
----
-
-## Signal Endpoints
-
-### GET /api/signals
-
-Recent signals (both accepted and rejected) for analysis.
-
-**Query Parameters:**
-- `accepted` (bool): Filter by acceptance status
-- `strategy` (string): Filter by strategy ID
-- `symbol` (string): Filter by symbol
-- `limit` (int): Results per page (default: 100)
-- `offset` (int): Pagination offset (default: 0)
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": [
+      "rank": 1,
+      "consensus": 1.0,
+      "sources": ["trend-following"],
+      "risk_position_size": 150.0,
+      "risk_meta": {
+        "method": "kelly_criterion",
+        "final_risk_pct": 1.8,
+        "adjustments": ["confidence=72% -> 0.86x", "volatility=normal -> 1.00x"]
+      }
+    },
     {
-      "timestamp": "2024-02-16T11:55:00Z",
-      "strategy_id": "turtle",
       "symbol": "SOLUSDTM",
       "side": "long",
-      "confidence": 0.72,
-      "price": 105.50,
-      "stop_loss": 102.00,
-      "take_profit": 112.00,
-      "reason": "20-day breakout with volume confirmation",
-      "was_selected": true,
-      "selection_reason": "Rank 1, consensus 85%",
-      "aggregated_rank": 1,
-      "consensus_score": 0.85
+      "confidence": 0.65,
+      "price": 180.25,
+      "stop_loss": 176.50,
+      "take_profit": 195.00,
+      "reason": "RSI Divergence: Bullish div (5.2%), RSI=35",
+      "strategy_id": "rsi-divergence",
+      "rank": 2,
+      "consensus": 1.0,
+      "sources": ["rsi-divergence"],
+      "risk_position_size": 120.0,
+      "risk_meta": {
+        "method": "fixed_fractional",
+        "final_risk_pct": 1.5
+      }
+    }
+  ]
+}
+```
+
+---
+
+### GET /learning
+
+Get learning summary (strategy performance and system state).
+
+**Response:**
+```json
+{
+  "strategy_performance": {
+    "trend-following": {
+      "trades": 50,
+      "wins": 28,
+      "total_pnl_pct": 45.5,
+      "score": 1.12,
+      "win_rate": 0.56,
+      "multiplier": 1.5
+    },
+    "zweig": {
+      "trades": 20,
+      "wins": 5,
+      "total_pnl_pct": -15.2,
+      "score": 0.22,
+      "win_rate": 0.25,
+      "multiplier": 0.0
+    }
+  },
+  "strategy_multipliers": {
+    "trend-following": 1.5,
+    "mean-reversion": 1.0,
+    "zweig": 0.7
+  },
+  "pending_counterfactuals": 15,
+  "second_chance": {
+    "total_rescued": 8,
+    "rescued_wins": 5,
+    "rescued_losses": 3,
+    "winning_patterns": 3,
+    "pending_near_misses": 12
+  },
+  "risk_manager": {
+    "equity": 10000.0,
+    "peak_equity": 10500.0
+  },
+  "data_files": {
+    "signals": "/app/data/signals_history.jsonl",
+    "trades": "/app/data/trades_history.jsonl",
+    "counterfactual": "/app/data/counterfactual.jsonl"
+  }
+}
+```
+
+---
+
+### GET /multipliers
+
+Get current dynamic strategy multipliers.
+
+**Response:**
+```json
+{
+  "trend-following": 1.5,
+  "mean-reversion": 1.0,
+  "turtle": 1.0,
+  "weinstein": 1.0,
+  "livermore": 1.0,
+  "bts-lynch": 0.8,
+  "zweig": 0.7,
+  "rsi-divergence": 1.0
+}
+```
+
+---
+
+### GET /counterfactual
+
+Analyze historical counterfactual data.
+
+**Response:**
+```json
+{
+  "timestamp": "2025-02-16T15:30:00.000Z",
+  "counterfactual_analysis": {
+    "total_rejections_tracked": 150,
+    "would_have_won": 55,
+    "would_have_lost": 95,
+    "hypothetical_win_rate": 0.367,
+    "by_rejection_reason": {
+      "Low confidence (52% < 55%)": {
+        "wins": 20,
+        "losses": 35,
+        "total_pnl": -15.5
+      },
+      "Already in long position": {
+        "wins": 10,
+        "losses": 25,
+        "total_pnl": -8.2
+      }
+    }
+  },
+  "pattern_analysis": {
+    "status": "analyzed",
+    "total_rejections": 150,
+    "winning_patterns": 2,
+    "patterns": [
+      {
+        "pattern_id": "hist_1",
+        "rejection_reason": "Low confidence",
+        "confidence_range": [0.525, 0.575],
+        "winning_rate": 0.62,
+        "sample_size": 15,
+        "strategy_ids": ["trend-following"],
+        "boost_amount": 0.05
+      }
+    ]
+  },
+  "recommendations": [
+    {
+      "type": "REDUCE_FALSE_NEGATIVES",
+      "reason": "Low confidence (52% < 55%)",
+      "win_rate": "62%",
+      "sample_size": 15,
+      "suggestion": "Signals rejected for 'Low confidence' win 62% of the time. Consider relaxing this filter."
+    }
+  ]
+}
+```
+
+---
+
+### GET /rescue_stats
+
+Get Second Chance rescue statistics.
+
+**Response:**
+```json
+{
+  "total_rescued": 25,
+  "rescued_wins": 15,
+  "rescued_losses": 10
+}
+```
+
+---
+
+## Profit Watchdog
+
+### GET /watchdog
+
+Full watchdog status.
+
+**Response:**
+```json
+{
+  "timestamp": "2025-02-16T15:30:00.000Z",
+  "summary": {
+    "total_decisions_tracked": 500,
+    "pending_outcomes": 25,
+    "active_alerts": 1
+  },
+  "accept_performance": {
+    "total": 50,
+    "winners": 28,
+    "losers": 22,
+    "win_rate": 0.56
+  },
+  "reject_counterfactual": {
+    "total": 150,
+    "would_have_won": 55,
+    "would_have_lost": 95,
+    "rejection_accuracy": 0.633
+  },
+  "strategy_drift": [
+    {
+      "strategy_id": "bts-lynch",
+      "historical_win_rate": 0.48,
+      "recent_win_rate": 0.35,
+      "drift_pct": -27.1,
+      "is_underperforming": true,
+      "sample_size": 20,
+      "confidence_in_drift": "medium"
     }
   ],
-  "metadata": {
-    "timestamp": "2024-02-16T12:00:00Z",
-    "total_count": 500,
-    "aggregates": {
-      "accepted_count": 120,
-      "rejected_count": 380,
-      "acceptance_rate": 24.0
+  "recommendations": [
+    {
+      "parameter": "strategy_multiplier:bts-lynch",
+      "current_value": 0.8,
+      "recommended_value": 0.5,
+      "reason": "Reduce exposure - 35% win rate is below threshold",
+      "expected_impact": "Better capital allocation",
+      "confidence": "medium",
+      "evidence": {"win_rate": 0.35, "sample_size": 20}
     }
+  ],
+  "alerts": [
+    {
+      "timestamp": "2025-02-16T15:00:00.000Z",
+      "severity": "warning",
+      "category": "drift",
+      "message": "Strategy bts-lynch underperforming: 35% vs historical 48%",
+      "details": {},
+      "recommended_action": "Review and potentially reduce multiplier for bts-lynch"
+    }
+  ],
+  "strategy_baselines": {
+    "trend-following": {
+      "win_rate": 0.51,
+      "trades": 100,
+      "total_pnl": 208.5
+    }
+  },
+  "recent_performance": {
+    "trend-following": {"wins": 15, "total": 25, "win_rate": 0.6}
   }
 }
 ```
 
 ---
 
-## Risk Endpoints
+### GET /watchdog/decisions
 
-### GET /api/risk
-
-Comprehensive risk metrics and limits.
-
-**Response:**
-```json
-{
-  "success": true,
-  "data": {
-    "timestamp": "2024-02-16T12:00:00Z",
-    "limits": {
-      "max_positions": 5,
-      "max_position_pct": 2.0,
-      "max_exposure_pct": 20.0,
-      "max_daily_loss_pct": 5.0,
-      "max_drawdown_pct": 10.0
-    },
-    "current": {
-      "positions": 3,
-      "position_pct": 1.5,
-      "exposure_pct": 12.0,
-      "daily_loss_pct": 0.5,
-      "drawdown_pct": 2.5
-    },
-    "utilization": {
-      "position_util": 60.0,
-      "exposure_util": 60.0,
-      "loss_util": 10.0,
-      "drawdown_util": 25.0
-    },
-    "circuit_breaker": {
-      "active": false,
-      "reason": null,
-      "triggered_at": null
-    },
-    "concentration": [
-      {"symbol": "XBTUSDTM", "exposure_pct": 45.0, "pnl": 50.00},
-      {"symbol": "ETHUSDTM", "exposure_pct": 35.0, "pnl": 25.00}
-    ],
-    "var_estimate": 0,
-    "stress_test": {}
-  },
-  "metadata": {"source": "live"}
-}
-```
-
----
-
-## Chart Endpoints
-
-### GET /api/chart/:symbol
-
-OHLCV candlestick data for charting.
-
-**Path Parameters:**
-- `symbol`: Trading symbol (e.g., XBTUSDTM)
+Recent orchestrator decisions with outcomes.
 
 **Query Parameters:**
-- `interval` (string): Candle interval (1m, 5m, 15m, 1h, 4h, 1d) - default: 15m
-- `limit` (int): Number of candles (default: 200)
+- `limit` (optional): Number of decisions to return (default: 50)
 
 **Response:**
 ```json
 {
-  "success": true,
-  "data": {
-    "symbol": "XBTUSDTM",
-    "interval": "15m",
-    "candles": [
-      {
-        "timestamp": "2024-02-16T11:45:00Z",
-        "open": 45000.00,
-        "high": 45150.00,
-        "low": 44980.00,
-        "close": 45100.00,
-        "volume": 1250000
-      }
-    ],
-    "signals": [...],
-    "position": {
+  "decisions": [
+    {
+      "timestamp": "2025-02-16T15:25:00.000Z",
+      "signal_id": "trend-following:ETHUSDTM",
+      "strategy_id": "trend-following",
+      "symbol": "ETHUSDTM",
       "side": "long",
-      "entry_price": 45000.00,
-      "size": 100
+      "confidence": 0.72,
+      "price_at_decision": 3250.50,
+      "accepted": true,
+      "rejection_reason": null,
+      "predicted_direction": "up",
+      "stop_loss": 3185.00,
+      "take_profit": 3510.00,
+      "price_1h": 3265.00,
+      "price_4h": 3280.00,
+      "price_24h": 3350.00,
+      "actual_pnl_pct": 3.1,
+      "was_winner": true,
+      "outcome_filled": true
     }
-  },
-  "metadata": {
-    "timestamp": "2024-02-16T12:00:00Z",
-    "count": 200
-  }
+  ]
 }
 ```
 
 ---
 
-## Real-Time Endpoints
+### GET /watchdog/alerts
 
-### GET /api/stream
+Active watchdog alerts.
 
-Server-Sent Events (SSE) stream for real-time updates.
-
-**Usage:**
-```javascript
-const eventSource = new EventSource('http://localhost:8888/api/stream');
-
-eventSource.addEventListener('snapshot', (e) => {
-  console.log('Initial state:', JSON.parse(e.data));
-});
-
-eventSource.addEventListener('update', (e) => {
-  console.log('Update:', JSON.parse(e.data));
-});
+**Response:**
+```json
+{
+  "alerts": [
+    {
+      "timestamp": "2025-02-16T15:00:00.000Z",
+      "severity": "warning",
+      "category": "drift",
+      "message": "Strategy bts-lynch underperforming: 35% vs historical 48%",
+      "details": {
+        "strategy_id": "bts-lynch",
+        "historical_win_rate": 0.48,
+        "recent_win_rate": 0.35,
+        "drift_pct": -27.1
+      },
+      "recommended_action": "Review and potentially reduce multiplier for bts-lynch"
+    }
+  ]
+}
 ```
 
-**Event Types:**
-- `connected` - Connection established
-- `heartbeat` - Keep-alive signal
-- `portfolio_update` - Portfolio state changed
-- `equity_change` - Equity changed significantly
-- `position_opened` - New position opened
-- `position_closed` - Position closed
-- `position_pnl` - Position P&L updated
-- `price_update` - Price changed significantly
-- `signal_received` - New signal from strategy
-- `signal_accepted` - Signal accepted for execution
-- `signal_rejected` - Signal rejected
-- `trade_executed` - Trade successfully executed
-- `risk_alert` - Risk limit warning
-- `circuit_breaker` - Circuit breaker triggered/reset
+**Alert Severities:**
+- `info`: Informational, no action required
+- `warning`: Attention needed, review recommended
+- `critical`: Immediate action required
 
-### GET /api/ws/events
-
-Get recent events for catch-up after reconnection.
-
-**Query Parameters:**
-- `limit` (int): Number of events (default: 50)
-- `types` (string): Comma-separated event types to filter
-
-### GET /api/ws/snapshot
-
-Get current state snapshot.
+**Alert Categories:**
+- `underperformance`: Overall system performance degradation
+- `drift`: Strategy deviating from historical performance
+- `missed_opportunity`: Rejecting too many winners
+- `parameter`: Parameter tuning suggestion
 
 ---
 
-## Internal Endpoints
+### GET /watchdog/recommendations
 
-These endpoints are used internally by the trading system:
+Parameter tuning recommendations.
 
-- `GET /health` - Health check
-- `GET /signals` - Internal signal aggregation
-- `GET /learning` - Learning summary
-- `GET /multipliers` - Strategy multipliers
-- `POST /signals` - Receive signals from agents
-- `POST /trade_result` - Record trade results
+**Response:**
+```json
+{
+  "recommendations": [
+    {
+      "parameter": "min_confidence",
+      "current_value": 0.55,
+      "recommended_value": 0.52,
+      "reason": "Signals with confidence >=52% have 58% win rate",
+      "expected_impact": "+8% edge improvement",
+      "confidence": "medium",
+      "evidence": {
+        "win_rates_by_confidence": {
+          "0.5": {"wins": 20, "losses": 15},
+          "0.55": {"wins": 25, "losses": 18}
+        }
+      }
+    }
+  ]
+}
+```
+
+---
+
+### GET /watchdog/drift
+
+Strategy drift analysis.
+
+**Response:**
+```json
+{
+  "strategy_drift": [
+    {
+      "strategy_id": "bts-lynch",
+      "historical_win_rate": 0.48,
+      "recent_win_rate": 0.35,
+      "drift_pct": -27.1,
+      "is_underperforming": true,
+      "sample_size": 20,
+      "confidence_in_drift": "medium"
+    }
+  ]
+}
+```
+
+---
+
+## Signal Submission
+
+### POST /signals
+
+Submit a signal from a strategy agent.
+
+**Request:**
+```json
+{
+  "strategy_id": "trend-following",
+  "symbol": "ETHUSDTM",
+  "side": "long",
+  "confidence": 0.72,
+  "price": 3250.50,
+  "stop_loss": 3185.00,
+  "take_profit": 3510.00,
+  "reason": "EMA crossover with ADX confirmation",
+  "timestamp": "2025-02-16T15:25:00.000Z",
+  "metadata": {
+    "adx": 32,
+    "rsi": 55
+  }
+}
+```
+
+**Required Fields:**
+| Field | Type | Description |
+|-------|------|-------------|
+| `symbol` | string | KuCoin symbol (e.g., `ETHUSDTM`) |
+| `side` | string | `long`, `short`, or `neutral` |
+| `confidence` | float | 0.0 to 1.0 |
+
+**Optional Fields:**
+| Field | Type | Description |
+|-------|------|-------------|
+| `strategy_id` | string | Identifier for the strategy |
+| `price` | float | Current price at signal time |
+| `stop_loss` | float | Stop loss price |
+| `take_profit` | float | Take profit price |
+| `reason` | string | Human-readable signal reason |
+| `timestamp` | string | ISO 8601 timestamp |
+| `metadata` | object | Additional signal data |
+
+**Response (success):**
+```json
+{
+  "status": "received"
+}
+```
+
+**Response (validation error):**
+```json
+{
+  "error": "Invalid symbol format: ETH"
+}
+```
+
+**Security:**
+- Max request size: 50KB
+- Symbols validated against pattern `^[A-Z0-9]{2,10}USDTM$`
+- Dangerous patterns (scripts, injections) are sanitised
+
+---
+
+### POST /trade_result
+
+Record a trade outcome for learning.
+
+**Request:**
+```json
+{
+  "symbol": "ETHUSDTM",
+  "side": "long",
+  "pnl": 50.25,
+  "pnl_pct": 1.5,
+  "strategy_id": "trend-following",
+  "reason": "Take profit hit"
+}
+```
+
+**Required Fields:**
+| Field | Type | Description |
+|-------|------|-------------|
+| `symbol` | string | KuCoin symbol |
+| `side` | string | `long` or `short` |
+| `pnl` | float | Absolute P&L in USDT |
+| `pnl_pct` | float | P&L percentage |
+| `strategy_id` | string | Strategy that generated the signal |
+
+**Optional Fields:**
+| Field | Type | Description |
+|-------|------|-------------|
+| `reason` | string | Exit reason |
+
+**Response:**
+```json
+{
+  "status": "recorded"
+}
+```
 
 ---
 
 ## Error Responses
 
-All endpoints return consistent error responses:
+All error responses follow this format:
 
 ```json
 {
-  "success": false,
-  "data": null,
-  "metadata": {
-    "error": "Error description"
-  }
+  "error": "Description of the error"
 }
 ```
 
-HTTP Status Codes:
-- `200` - Success
-- `400` - Bad request
-- `404` - Not found
-- `413` - Request too large
-- `500` - Internal error
+**HTTP Status Codes:**
+| Code | Meaning |
+|------|---------|
+| 200 | Success |
+| 400 | Bad request (validation error) |
+| 404 | Endpoint not found |
+| 413 | Request too large |
+| 500 | Internal server error |
 
 ---
 
-## Rate Limits
+## Rate Limiting
 
-No rate limits currently enforced (internal use only).
+Currently no explicit rate limiting, but:
+- Signal endpoints process one at a time
+- Large requests (>50KB) are rejected
+- Consider implementing rate limiting for production
 
 ---
 
-## Versioning
+## Dashboard API
 
-Current API version: **2.0**
+For the full-featured dashboard API (portfolio, positions, trades, charts), see `api/endpoints.py`. Key additional endpoints:
 
-Check version via `/health` endpoint:
-```json
-{
-  "status": "healthy",
-  "api_version": "2.0",
-  "dashboard": true
-}
+```
+GET /api/portfolio     → Portfolio overview
+GET /api/positions     → All positions
+GET /api/trades        → Trade history with filters
+GET /api/strategies    → Strategy performance
+GET /api/signals       → Signal history
+GET /api/risk          → Risk metrics
+GET /api/chart/:symbol → OHLCV data
 ```
