@@ -120,15 +120,16 @@ class Executor:
         
         # Initialize execution engine
         self.kucoin = KuCoinFuturesExecutor()
-        # FULL BLOODED MODE - no caps, Kelly decides
+        # AGGRESSIVE BUT CONTROLLED - 50% max exposure, mandatory stops
         self.engine = ExecutionEngine(
             executor=self.kucoin,
             risk_config=RiskConfig(
-                max_position_pct=100.0,  # No cap
-                max_total_exposure_pct=100.0,  # No cap
+                max_position_pct=25.0,  # Max 25% per position
+                max_total_exposure_pct=50.0,  # Max 50% total exposure
                 max_positions=50,  # Effectively unlimited
-                max_daily_loss_pct=15.0,  # Emergency only
+                max_daily_loss_pct=10.0,  # 10% daily loss limit
                 default_leverage=10,
+                default_stop_loss_pct=2.0,  # 2% stop loss required
                 default_take_profit_pct=8.0
             ),
             mode=mode
