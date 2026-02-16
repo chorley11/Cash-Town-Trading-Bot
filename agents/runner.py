@@ -26,6 +26,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from agents.strategies import STRATEGY_REGISTRY
 from agents.base import Signal, SignalSide
 from data.feed import KuCoinDataFeed
+from data.futures_data import KuCoinFuturesData
 
 logging.basicConfig(
     level=logging.INFO,
@@ -40,11 +41,13 @@ class AgentRunner:
     
     ORCHESTRATOR_URL = os.environ.get('ORCHESTRATOR_URL', f"http://localhost:{os.environ.get('PORT', '8888')}")
     
-    def __init__(self, strategy_id: str, symbols: list = None, interval_seconds: int = 300):
+    def __init__(self, strategy_id: str, symbols: list = None, interval_seconds: int = 300,
+                 needs_futures_data: bool = False):
         self.strategy_id = strategy_id
         self.symbols = symbols or ['XBTUSDTM', 'ETHUSDTM', 'SOLUSDTM', 'AVAXUSDTM', 'LINKUSDTM']
         self.interval = interval_seconds
         self.running = False
+        self.needs_futures_data = needs_futures_data
         
         # Get strategy class
         if strategy_id not in STRATEGY_REGISTRY:
@@ -56,6 +59,12 @@ class AgentRunner:
         
         # Data feed
         self.data_feed = KuCoinDataFeed(self.symbols, interval='15min')
+        
+        # Futures-specific data feed (for funding rates, OI, order book)
+        self.futures_data = None
+        if needs_futures_data or strategy_id in ['funding-fade', 'oi-divergence', 'liquidation-hunter']:
+            self.futures_data = KuCoinFuturesData(self.symbols)
+            self.logger.info(f"  Futures data feed enabled")
         
         self.logger.info(f"Agent initialized: {self.agent.name}")
         self.logger.info(f"  Symbols: {', '.join(self.symbols)}")
@@ -99,6 +108,14 @@ class AgentRunner:
         # Log symbols with data
         symbols_with_data = sum(1 for s in self.symbols if s in market_data and market_data.get(s))
         self.logger.info(f"📊 [{self.strategy_id}] Data for {symbols_with_data}/{len(self.symbols)} symbols")
+        
+        # Fetch and provide futures-specific data if needed
+        if self.futures_data:
+            try:
+                self.futures_data.fetch_all()
+                self._inject_futures_data()
+            except Exception as e:
+                self.logger.warning(f"⚠️ [{self.strategy_id}] Futures data fetch error: {e}")
         
         # Generate signals
         try:
@@ -186,6 +203,45 @@ class AgentRunner:
             )
         except:
             pass  # Health reporting is best-effort
+    
+    def _inject_futures_data(self):
+        """Inject futures-specific data into agents that need it"""
+        if not self.futures_data:
+            return
+        
+        # Funding rates for funding-fade strategy
+        if hasattr(self.agent, 'set_funding_data'):
+            funding_data = {}
+            for symbol, fd in self.futures_data.funding.items():
+                if fd:
+                    funding_data[symbol] = fd.current_rate
+            self.agent.set_funding_data(funding_data)
+            self.logger.debug(f"Injected funding data for {len(funding_data)} symbols")
+        
+        # OI data for oi-divergence strategy
+        if hasattr(self.agent, 'set_oi_data'):
+            oi_data = {}
+            for symbol, oid in self.futures_data.open_interest.items():
+                if oid:
+                    oi_data[symbol] = {
+                        'current': oid.open_interest,
+                        'previous': oid.prev_open_interest or oid.open_interest
+                    }
+            self.agent.set_oi_data(oi_data)
+            self.logger.debug(f"Injected OI data for {len(oi_data)} symbols")
+        
+        # Order book data for liquidation-hunter strategy
+        if hasattr(self.agent, 'set_order_book_data'):
+            ob_data = {}
+            for symbol, obd in self.futures_data.order_book.items():
+                if obd:
+                    ob_data[symbol] = {
+                        'bid_depth': obd.bid_depth,
+                        'ask_depth': obd.ask_depth,
+                        'imbalance': obd.imbalance
+                    }
+            self.agent.set_order_book_data(ob_data)
+            self.logger.debug(f"Injected order book data for {len(ob_data)} symbols")
     
     def _register(self):
         """Register agent with orchestrator"""

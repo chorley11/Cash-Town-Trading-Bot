@@ -58,6 +58,7 @@ ALL_SYMBOLS = [
 # Performance-ranked: trend-following is the star (+$208, 51% WR)
 # FIXED: zweig re-enabled with major fixes (see agents/strategies/zweig.py)
 AGENT_CONFIGS = [
+    # Original strategies
     {'id': 'trend-following', 'symbols': ALL_SYMBOLS, 'interval': 300},  # STAR: 51% WR, +$208
     {'id': 'mean-reversion', 'symbols': ALL_SYMBOLS, 'interval': 300},
     {'id': 'turtle', 'symbols': ALL_SYMBOLS, 'interval': 300},
@@ -66,6 +67,12 @@ AGENT_CONFIGS = [
     {'id': 'bts-lynch', 'symbols': ALL_SYMBOLS, 'interval': 300},
     {'id': 'zweig', 'symbols': ALL_SYMBOLS, 'interval': 300},  # FIXED: v2 with thrust detection
     {'id': 'rsi-divergence', 'symbols': ALL_SYMBOLS, 'interval': 300},  # NEW: catches reversals early
+    # New futures-specific strategies (Feb 2026)
+    {'id': 'funding-fade', 'symbols': ALL_SYMBOLS, 'interval': 300, 'needs_futures_data': True},
+    {'id': 'oi-divergence', 'symbols': ALL_SYMBOLS, 'interval': 300, 'needs_futures_data': True},
+    {'id': 'liquidation-hunter', 'symbols': ALL_SYMBOLS, 'interval': 300, 'needs_futures_data': True},
+    {'id': 'volatility-breakout', 'symbols': ALL_SYMBOLS, 'interval': 300},  # Uses OHLCV only
+    {'id': 'correlation-pairs', 'symbols': ALL_SYMBOLS, 'interval': 300},  # Uses price data only
 ]
 
 class CloudRunnerV2:
