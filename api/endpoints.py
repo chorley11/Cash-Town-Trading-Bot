@@ -641,6 +641,164 @@ class DashboardAPI:
         ).to_dict()
     
     # ==========================================
+    # PYRAMID ENDPOINTS
+    # ==========================================
+    
+    def get_pyramid_status(self) -> Dict:
+        """
+        GET /api/pyramid
+        
+        Current pyramiding status for all positions:
+        - Pyramid levels and thresholds
+        - Position sizes (base vs current)
+        - Leverage progression
+        - History of adds/deleverages
+        - Opportunities for next pyramid
+        """
+        pyramid_data = {
+            'timestamp': datetime.utcnow().isoformat(),
+            'enabled': True,
+            'config': {
+                'max_levels': 3,
+                'level_2_threshold': 1.5,  # +1.5% ROE
+                'level_3_threshold': 3.0,  # +3.0% ROE
+                'level_2_add_pct': 50,
+                'level_3_add_pct': 25,
+                'leverage_bump_per_level': 1,
+                'max_leverage': 10
+            },
+            'positions': [],
+            'summary': {
+                'total_pyramided_positions': 0,
+                'total_pyramid_adds': 0,
+                'total_deleverages': 0,
+                'positions_at_max_level': 0
+            }
+        }
+        
+        # Get pyramid status from orchestrator's risk manager
+        if self.orchestrator and hasattr(self.orchestrator, 'risk_manager'):
+            try:
+                rm = self.orchestrator.risk_manager
+                pyr_status = rm.get_pyramid_status()
+                
+                pyramid_data['enabled'] = pyr_status.get('enabled', True)
+                pyramid_data['config']['max_levels'] = pyr_status.get('max_levels', 3)
+                
+                # Enrich with current price data
+                for symbol, pstate in pyr_status.get('positions', {}).items():
+                    position_info = pstate.copy()
+                    
+                    # Get current price from executor
+                    if self.executor and symbol in self.executor.positions:
+                        pos = self.executor.positions[symbol]
+                        position_info['entry_price'] = pos.entry_price
+                        position_info['unrealized_pnl'] = pos.unrealized_pnl
+                        position_info['side'] = pos.side
+                        
+                        # Calculate ROE
+                        if pos.entry_price > 0:
+                            if pos.side == 'long':
+                                # For long, need current price to calculate ROE
+                                # unrealized_pnl = (current - entry) * size
+                                roe_pct = (pos.unrealized_pnl / (pos.size * pos.entry_price)) * 100 * pos.leverage
+                            else:
+                                roe_pct = (pos.unrealized_pnl / (pos.size * pos.entry_price)) * 100 * pos.leverage
+                            position_info['current_roe_pct'] = round(roe_pct, 2)
+                            
+                            # Check if can pyramid
+                            next_threshold = pstate.get('next_level_threshold')
+                            if next_threshold and roe_pct >= next_threshold:
+                                position_info['pyramid_ready'] = True
+                            else:
+                                position_info['pyramid_ready'] = False
+                    
+                    # Count history events
+                    history = pstate.get('pyramid_history', [])
+                    adds = sum(1 for h in history if h.get('action') != 'deleverage')
+                    deleverages = sum(1 for h in history if h.get('action') == 'deleverage')
+                    position_info['total_adds'] = adds
+                    position_info['total_deleverages'] = deleverages
+                    
+                    pyramid_data['positions'].append(position_info)
+                    
+                    # Update summary
+                    if pstate.get('current_level', 1) > 1:
+                        pyramid_data['summary']['total_pyramided_positions'] += 1
+                    if pstate.get('current_level', 1) >= 3:
+                        pyramid_data['summary']['positions_at_max_level'] += 1
+                    pyramid_data['summary']['total_pyramid_adds'] += adds
+                    pyramid_data['summary']['total_deleverages'] += deleverages
+                    
+            except Exception as e:
+                logger.error(f"Error getting pyramid status: {e}")
+        
+        return APIResponse(
+            success=True,
+            data=pyramid_data,
+            metadata={'source': 'live'}
+        ).to_dict()
+    
+    def get_leverage_info(self) -> Dict:
+        """
+        GET /api/leverage
+        
+        Current leverage configuration and usage:
+        - Confidence-based leverage tiers
+        - Strategy bonuses/penalties
+        - Current leverage by position
+        """
+        leverage_data = {
+            'timestamp': datetime.utcnow().isoformat(),
+            'tiers': {
+                'low': {'confidence': '55-65%', 'leverage': '2-3x'},
+                'medium': {'confidence': '65-80%', 'leverage': '4-6x'},
+                'high': {'confidence': '80%+', 'leverage': '8-10x'}
+            },
+            'absolute_max': 10,
+            'absolute_min': 1,
+            'positions': [],
+            'strategy_bonuses': {}
+        }
+        
+        if self.orchestrator and hasattr(self.orchestrator, 'risk_manager'):
+            try:
+                rm = self.orchestrator.risk_manager
+                
+                # Get leverage config
+                lev_config = rm.config.leverage_config
+                leverage_data['absolute_max'] = lev_config.absolute_max_leverage
+                leverage_data['absolute_min'] = lev_config.min_leverage
+                
+                # Get strategy bonuses from stats
+                for strategy_id, stats in rm.strategy_stats.items():
+                    bonus = rm._calculate_strategy_leverage_bonus(strategy_id)
+                    if bonus != 0:
+                        leverage_data['strategy_bonuses'][strategy_id] = {
+                            'bonus': bonus,
+                            'trades': stats.get('trades', 0),
+                            'win_rate': stats.get('wins', 0) / max(stats.get('trades', 1), 1) * 100
+                        }
+                
+                # Get current leverage by position
+                for symbol, pstate in rm.pyramid_states.items():
+                    leverage_data['positions'].append({
+                        'symbol': symbol,
+                        'base_leverage': pstate.base_leverage,
+                        'current_leverage': pstate.current_leverage,
+                        'level': pstate.current_level
+                    })
+                    
+            except Exception as e:
+                logger.error(f"Error getting leverage info: {e}")
+        
+        return APIResponse(
+            success=True,
+            data=leverage_data,
+            metadata={'source': 'live'}
+        ).to_dict()
+    
+    # ==========================================
     # RISK ENDPOINTS
     # ==========================================
     

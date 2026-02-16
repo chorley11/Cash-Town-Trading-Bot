@@ -7,8 +7,12 @@ Responsibilities:
 3. Correlation detection (avoid overloading same bet)
 4. Circuit breakers (halt trading on drawdown)
 5. Volatility-adjusted sizing
+6. Dynamic leverage based on confidence + strategy performance
+7. Pyramiding into winners (add to profitable positions)
+8. Deleveraging losers (reduce exposure on drawdown)
 
 Philosophy: Protect capital first, maximize risk-adjusted returns second.
+Let winners run with more size, cut losers quickly.
 """
 import json
 import logging
@@ -41,6 +45,82 @@ class RiskLevel(Enum):
     MEDIUM = "medium"
     HIGH = "high"
     CRITICAL = "critical"
+
+
+@dataclass
+class LeverageConfig:
+    """Dynamic leverage configuration based on confidence and performance"""
+    # Confidence-based leverage tiers
+    low_confidence_range: Tuple[float, float] = (0.55, 0.65)      # 55-65%
+    low_confidence_leverage: Tuple[int, int] = (2, 3)             # 2-3x
+    
+    medium_confidence_range: Tuple[float, float] = (0.65, 0.80)   # 65-80%
+    medium_confidence_leverage: Tuple[int, int] = (4, 6)          # 4-6x
+    
+    high_confidence_range: Tuple[float, float] = (0.80, 1.0)      # 80%+
+    high_confidence_leverage: Tuple[int, int] = (8, 10)           # 8-10x
+    
+    # Strategy track record bonus
+    min_trades_for_bonus: int = 20                                # Min trades before bonus
+    win_rate_bonus_threshold: float = 0.55                        # 55%+ WR gets bonus
+    max_strategy_bonus: float = 2.0                               # +2x max leverage for star strategies
+    
+    # Safety caps
+    absolute_max_leverage: int = 10                               # NEVER exceed 10x
+    min_leverage: int = 1                                         # Floor at 1x
+    
+    # Volatility adjustments
+    high_vol_reduction: float = 0.5                               # Halve leverage in high vol
+    extreme_vol_reduction: float = 0.25                           # 25% leverage in extreme vol
+
+
+@dataclass
+class PyramidConfig:
+    """Pyramiding configuration - adding to winners"""
+    enabled: bool = True
+    max_pyramid_levels: int = 3                                   # Max 3 additions
+    
+    # Pyramid level thresholds (ROE required to add)
+    level_2_roe_threshold: float = 1.5                            # +1.5% ROE for level 2
+    level_3_roe_threshold: float = 3.0                            # +3.0% ROE for level 3
+    
+    # Size additions per level (% of original size)
+    level_2_size_pct: float = 50.0                                # Add 50% at level 2
+    level_3_size_pct: float = 25.0                                # Add 25% at level 3
+    
+    # Leverage bump per level
+    leverage_bump_per_level: int = 1                              # +1x leverage per pyramid
+    
+    # Cooldown between pyramids (avoid rapid-fire adds)
+    min_time_between_pyramids_minutes: int = 15
+
+
+@dataclass
+class PyramidState:
+    """Track pyramid state for a single position"""
+    symbol: str
+    base_size: float                                              # Original position size
+    base_leverage: int                                            # Original leverage
+    current_level: int = 1                                        # 1=base, 2=first add, 3=second add
+    total_size: float = 0.0                                       # Total position after pyramids
+    current_leverage: int = 0                                     # Current leverage after bumps
+    pyramid_history: List[Dict] = field(default_factory=list)     # History of adds
+    last_pyramid_time: Optional[datetime] = None
+    
+    def __post_init__(self):
+        if self.total_size == 0:
+            self.total_size = self.base_size
+        if self.current_leverage == 0:
+            self.current_leverage = self.base_leverage
+
+
+@dataclass
+class DeleverageConfig:
+    """Configuration for deleveraging losing positions"""
+    enabled: bool = True
+    roe_threshold: float = -1.0                                   # -1% ROE triggers deleverage
+    reduction_pct: float = 50.0                                   # Reduce size by 50%
+    min_size_after_deleverage: float = 10.0                       # Minimum $10 position
 
 
 @dataclass
@@ -119,6 +199,11 @@ class RiskConfig:
     high_vol_reduction: float = 0.5         # Reduce size by 50% in high vol
     extreme_vol_reduction: float = 0.25     # Reduce size by 75% in extreme vol
     vol_lookback_hours: int = 24
+    
+    # Dynamic leverage & pyramiding
+    leverage_config: LeverageConfig = field(default_factory=LeverageConfig)
+    pyramid_config: PyramidConfig = field(default_factory=PyramidConfig)
+    deleverage_config: DeleverageConfig = field(default_factory=DeleverageConfig)
 
 
 @dataclass
@@ -163,6 +248,9 @@ class RiskManager:
         # Performance tracking for Kelly
         self.strategy_stats: Dict[str, Dict] = {}  # strategy_id -> {wins, losses, avg_win, avg_loss}
         
+        # Pyramid state tracking
+        self.pyramid_states: Dict[str, PyramidState] = {}  # symbol -> PyramidState
+        
         # Daily tracking
         self.daily_stats = {
             'date': date.today().isoformat(),
@@ -177,6 +265,8 @@ class RiskManager:
         self._load_state()
         
         logger.info(f"🛡️ RiskManager initialized: equity=${equity:.2f}, max_risk={self.config.max_total_risk_pct}%")
+        logger.info(f"   Dynamic leverage: {self.config.leverage_config.low_confidence_leverage[0]}-{self.config.leverage_config.absolute_max_leverage}x")
+        logger.info(f"   Pyramiding: {'enabled' if self.config.pyramid_config.enabled else 'disabled'}")
     
     def update_equity(self, new_equity: float):
         """Update current equity and check drawdown"""
@@ -424,6 +514,480 @@ class RiskManager:
         
         return position_value
     
+    # ==========================================
+    # DYNAMIC LEVERAGE METHODS
+    # ==========================================
+    
+    def calculate_leverage(
+        self,
+        confidence: float,
+        strategy_id: str,
+        symbol: str = None
+    ) -> Tuple[int, Dict]:
+        """
+        Calculate optimal leverage based on:
+        1. Signal confidence level
+        2. Strategy track record (winning strategies get bonus)
+        3. Volatility regime (reduce in high vol)
+        4. Circuit breaker state (minimum leverage if triggered recently)
+        
+        Returns:
+            (leverage, metadata_dict)
+        """
+        lev_config = self.config.leverage_config
+        metadata = {
+            'base_leverage': 0,
+            'confidence_tier': '',
+            'adjustments': [],
+            'final_leverage': 0
+        }
+        
+        # Circuit breaker override - minimum leverage if recently triggered
+        if self.circuit_breaker.is_triggered:
+            metadata['adjustments'].append('circuit_breaker_active -> minimum leverage')
+            metadata['final_leverage'] = lev_config.min_leverage
+            return lev_config.min_leverage, metadata
+        
+        # Step 1: Determine base leverage from confidence tier
+        if confidence < lev_config.low_confidence_range[0]:
+            # Below minimum threshold - don't trade
+            metadata['confidence_tier'] = 'below_minimum'
+            metadata['final_leverage'] = 0
+            return 0, metadata
+        elif confidence < lev_config.low_confidence_range[1]:
+            # Low confidence: 55-65%
+            tier_min, tier_max = lev_config.low_confidence_leverage
+            confidence_tier = 'low'
+            # Interpolate within tier
+            tier_progress = (confidence - lev_config.low_confidence_range[0]) / (
+                lev_config.low_confidence_range[1] - lev_config.low_confidence_range[0]
+            )
+        elif confidence < lev_config.medium_confidence_range[1]:
+            # Medium confidence: 65-80%
+            tier_min, tier_max = lev_config.medium_confidence_leverage
+            confidence_tier = 'medium'
+            tier_progress = (confidence - lev_config.medium_confidence_range[0]) / (
+                lev_config.medium_confidence_range[1] - lev_config.medium_confidence_range[0]
+            )
+        else:
+            # High confidence: 80%+
+            tier_min, tier_max = lev_config.high_confidence_leverage
+            confidence_tier = 'high'
+            tier_progress = min(1.0, (confidence - lev_config.high_confidence_range[0]) / (
+                lev_config.high_confidence_range[1] - lev_config.high_confidence_range[0]
+            ))
+        
+        # Calculate base leverage within tier
+        base_leverage = tier_min + (tier_max - tier_min) * tier_progress
+        metadata['base_leverage'] = base_leverage
+        metadata['confidence_tier'] = confidence_tier
+        
+        # Step 2: Strategy track record bonus
+        strategy_bonus = self._calculate_strategy_leverage_bonus(strategy_id)
+        if strategy_bonus > 0:
+            base_leverage += strategy_bonus
+            metadata['adjustments'].append(f'strategy_bonus: +{strategy_bonus:.1f}x')
+        elif strategy_bonus < 0:
+            base_leverage += strategy_bonus  # Negative = penalty
+            metadata['adjustments'].append(f'strategy_penalty: {strategy_bonus:.1f}x')
+        
+        # Step 3: Volatility adjustment
+        if symbol and symbol in self.volatility:
+            vol_data = self.volatility[symbol]
+            if vol_data.vol_regime == "extreme":
+                vol_mult = lev_config.extreme_vol_reduction
+                base_leverage *= vol_mult
+                metadata['adjustments'].append(f'extreme_vol: x{vol_mult}')
+            elif vol_data.vol_regime == "high":
+                vol_mult = lev_config.high_vol_reduction
+                base_leverage *= vol_mult
+                metadata['adjustments'].append(f'high_vol: x{vol_mult}')
+        
+        # Step 4: Apply hard caps
+        final_leverage = max(lev_config.min_leverage, min(
+            int(round(base_leverage)),
+            lev_config.absolute_max_leverage
+        ))
+        
+        metadata['final_leverage'] = final_leverage
+        
+        logger.info(f"📊 Leverage: confidence={confidence:.0%} ({confidence_tier}) -> {final_leverage}x")
+        for adj in metadata['adjustments']:
+            logger.debug(f"   ↳ {adj}")
+        
+        return final_leverage, metadata
+    
+    def _calculate_strategy_leverage_bonus(self, strategy_id: str) -> float:
+        """
+        Calculate leverage bonus/penalty based on strategy track record.
+        
+        - Strategies with 55%+ win rate and min trades get bonus leverage
+        - Strategies with poor track record get penalty
+        
+        Returns:
+            Bonus leverage (can be negative for penalty)
+        """
+        lev_config = self.config.leverage_config
+        stats = self.strategy_stats.get(strategy_id)
+        
+        if not stats or stats.get('trades', 0) < lev_config.min_trades_for_bonus:
+            return 0  # Not enough data
+        
+        wins = stats.get('wins', 0)
+        losses = stats.get('losses', 0)
+        total = wins + losses
+        
+        if total == 0:
+            return 0
+        
+        win_rate = wins / total
+        
+        # Calculate bonus/penalty
+        if win_rate >= lev_config.win_rate_bonus_threshold:
+            # Good strategy - give bonus
+            # Scale bonus from 0 to max based on how far above threshold
+            bonus_progress = min(1.0, (win_rate - lev_config.win_rate_bonus_threshold) / 0.15)
+            bonus = bonus_progress * lev_config.max_strategy_bonus
+            return bonus
+        elif win_rate < 0.40:
+            # Bad strategy (<40% WR) - apply penalty
+            return -2.0  # Reduce leverage by 2x
+        elif win_rate < 0.45:
+            # Poor strategy - slight penalty
+            return -1.0
+        
+        return 0
+    
+    # ==========================================
+    # PYRAMIDING METHODS
+    # ==========================================
+    
+    def check_pyramid_opportunity(
+        self,
+        symbol: str,
+        current_price: float,
+        entry_price: float,
+        side: str
+    ) -> Tuple[bool, Optional[Dict]]:
+        """
+        Check if a position is eligible for pyramiding (adding to winners).
+        
+        Rules:
+        - Level 2: +1.5% ROE → add 50% of original size, +1x leverage
+        - Level 3: +3.0% ROE → add 25% of original size, +1x leverage
+        - Max 3 levels total
+        - Cooldown between pyramids
+        - Max leverage cap of 10x
+        
+        Returns:
+            (can_pyramid, pyramid_details)
+        """
+        pyr_config = self.config.pyramid_config
+        lev_config = self.config.leverage_config
+        
+        if not pyr_config.enabled:
+            return False, {'reason': 'pyramiding_disabled'}
+        
+        # Calculate ROE (Return on Equity)
+        if side == 'long':
+            roe_pct = (current_price - entry_price) / entry_price * 100
+        else:
+            roe_pct = (entry_price - current_price) / entry_price * 100
+        
+        # If losing, no pyramiding
+        if roe_pct <= 0:
+            return False, {'reason': 'position_not_profitable', 'roe': roe_pct}
+        
+        # Get or create pyramid state
+        if symbol not in self.pyramid_states:
+            return False, {'reason': 'no_pyramid_state', 'roe': roe_pct}
+        
+        state = self.pyramid_states[symbol]
+        
+        # Check max levels
+        if state.current_level >= pyr_config.max_pyramid_levels:
+            return False, {'reason': 'max_pyramid_levels_reached', 'level': state.current_level}
+        
+        # Check cooldown
+        if state.last_pyramid_time:
+            minutes_since_last = (datetime.utcnow() - state.last_pyramid_time).total_seconds() / 60
+            if minutes_since_last < pyr_config.min_time_between_pyramids_minutes:
+                return False, {
+                    'reason': 'cooldown_active',
+                    'minutes_remaining': pyr_config.min_time_between_pyramids_minutes - minutes_since_last
+                }
+        
+        # Check leverage cap
+        proposed_leverage = state.current_leverage + pyr_config.leverage_bump_per_level
+        if proposed_leverage > lev_config.absolute_max_leverage:
+            return False, {
+                'reason': 'would_exceed_max_leverage',
+                'current_leverage': state.current_leverage,
+                'proposed_leverage': proposed_leverage,
+                'max': lev_config.absolute_max_leverage
+            }
+        
+        # Determine which level we can pyramid to
+        if state.current_level == 1 and roe_pct >= pyr_config.level_2_roe_threshold:
+            # Can pyramid to level 2
+            add_size_pct = pyr_config.level_2_size_pct
+            add_size = state.base_size * (add_size_pct / 100)
+            target_level = 2
+        elif state.current_level == 2 and roe_pct >= pyr_config.level_3_roe_threshold:
+            # Can pyramid to level 3
+            add_size_pct = pyr_config.level_3_size_pct
+            add_size = state.base_size * (add_size_pct / 100)
+            target_level = 3
+        else:
+            # ROE not high enough for next level
+            if state.current_level == 1:
+                threshold = pyr_config.level_2_roe_threshold
+            else:
+                threshold = pyr_config.level_3_roe_threshold
+            return False, {
+                'reason': 'roe_below_threshold',
+                'roe': roe_pct,
+                'threshold': threshold,
+                'current_level': state.current_level
+            }
+        
+        # All checks passed - pyramid opportunity exists
+        pyramid_details = {
+            'can_pyramid': True,
+            'symbol': symbol,
+            'side': side,
+            'current_roe': roe_pct,
+            'current_level': state.current_level,
+            'target_level': target_level,
+            'add_size': add_size,
+            'add_size_pct': add_size_pct,
+            'new_total_size': state.total_size + add_size,
+            'current_leverage': state.current_leverage,
+            'new_leverage': proposed_leverage,
+            'entry_price': entry_price,
+            'current_price': current_price
+        }
+        
+        logger.info(f"🔺 PYRAMID OPPORTUNITY: {symbol} @ {roe_pct:.2f}% ROE -> Level {target_level}")
+        logger.info(f"   Add {add_size:.4f} ({add_size_pct}% of base), leverage {state.current_leverage}x -> {proposed_leverage}x")
+        
+        return True, pyramid_details
+    
+    def execute_pyramid(
+        self,
+        symbol: str,
+        add_size: float,
+        new_leverage: int,
+        target_level: int,
+        entry_price: float
+    ) -> bool:
+        """
+        Execute a pyramid add (record the state change).
+        Actual order execution is handled by execution engine.
+        
+        Returns:
+            success
+        """
+        if symbol not in self.pyramid_states:
+            logger.error(f"Cannot pyramid {symbol}: no pyramid state")
+            return False
+        
+        state = self.pyramid_states[symbol]
+        
+        # Record the pyramid
+        pyramid_record = {
+            'timestamp': datetime.utcnow().isoformat(),
+            'from_level': state.current_level,
+            'to_level': target_level,
+            'size_added': add_size,
+            'leverage_before': state.current_leverage,
+            'leverage_after': new_leverage,
+            'price': entry_price
+        }
+        
+        # Update state
+        state.current_level = target_level
+        state.total_size += add_size
+        state.current_leverage = new_leverage
+        state.pyramid_history.append(pyramid_record)
+        state.last_pyramid_time = datetime.utcnow()
+        
+        logger.info(f"🔺 PYRAMID EXECUTED: {symbol} now at level {target_level}")
+        logger.info(f"   Total size: {state.total_size:.4f}, Leverage: {new_leverage}x")
+        
+        self._save_state()
+        return True
+    
+    # ==========================================
+    # DELEVERAGE METHODS
+    # ==========================================
+    
+    def check_deleverage_needed(
+        self,
+        symbol: str,
+        current_price: float,
+        entry_price: float,
+        side: str
+    ) -> Tuple[bool, Optional[Dict]]:
+        """
+        Check if a losing position needs deleveraging.
+        
+        Rule: If ROE < -1%, reduce position size.
+        Never add to losers.
+        
+        Returns:
+            (should_deleverage, details)
+        """
+        delev_config = self.config.deleverage_config
+        
+        if not delev_config.enabled:
+            return False, {'reason': 'deleveraging_disabled'}
+        
+        # Calculate ROE
+        if side == 'long':
+            roe_pct = (current_price - entry_price) / entry_price * 100
+        else:
+            roe_pct = (entry_price - current_price) / entry_price * 100
+        
+        # If not losing enough, no action needed
+        if roe_pct > delev_config.roe_threshold:
+            return False, {'reason': 'roe_above_threshold', 'roe': roe_pct, 'threshold': delev_config.roe_threshold}
+        
+        # Position is losing - calculate deleverage
+        if symbol not in self.pyramid_states:
+            return False, {'reason': 'no_pyramid_state', 'roe': roe_pct}
+        
+        state = self.pyramid_states[symbol]
+        
+        # Calculate new size after reduction
+        reduction_size = state.total_size * (delev_config.reduction_pct / 100)
+        new_size = state.total_size - reduction_size
+        
+        # Check minimum size (in dollar terms)
+        # Use entry_price to convert contract size to notional value
+        new_value_usd = new_size * entry_price
+        if new_value_usd < delev_config.min_size_after_deleverage:
+            # Position would be too small - recommend full close instead
+            return False, {
+                'reason': 'would_be_too_small',
+                'roe': roe_pct,
+                'current_size': state.total_size,
+                'would_reduce_to': new_size,
+                'would_reduce_to_usd': new_value_usd,
+                'min_required_usd': delev_config.min_size_after_deleverage,
+                'recommend': 'close_position'
+            }
+        
+        deleverage_details = {
+            'should_deleverage': True,
+            'symbol': symbol,
+            'side': side,
+            'roe': roe_pct,
+            'current_size': state.total_size,
+            'reduction_size': reduction_size,
+            'new_size': new_size,
+            'reduction_pct': delev_config.reduction_pct
+        }
+        
+        logger.warning(f"⚠️ DELEVERAGE NEEDED: {symbol} @ {roe_pct:.2f}% ROE")
+        logger.warning(f"   Reduce size: {state.total_size:.4f} -> {new_size:.4f} ({delev_config.reduction_pct}% reduction)")
+        
+        return True, deleverage_details
+    
+    def execute_deleverage(
+        self,
+        symbol: str,
+        new_size: float,
+        reduction_size: float
+    ) -> bool:
+        """
+        Execute a deleverage (record the state change).
+        Actual order execution is handled by execution engine.
+        
+        Returns:
+            success
+        """
+        if symbol not in self.pyramid_states:
+            logger.error(f"Cannot deleverage {symbol}: no pyramid state")
+            return False
+        
+        state = self.pyramid_states[symbol]
+        
+        # Record the deleverage
+        deleverage_record = {
+            'timestamp': datetime.utcnow().isoformat(),
+            'action': 'deleverage',
+            'size_before': state.total_size,
+            'size_reduced': reduction_size,
+            'size_after': new_size
+        }
+        
+        state.total_size = new_size
+        state.pyramid_history.append(deleverage_record)
+        
+        logger.info(f"📉 DELEVERAGE EXECUTED: {symbol} reduced to {new_size:.4f}")
+        
+        self._save_state()
+        return True
+    
+    def init_pyramid_state(
+        self,
+        symbol: str,
+        base_size: float,
+        base_leverage: int
+    ):
+        """Initialize pyramid state for a new position"""
+        self.pyramid_states[symbol] = PyramidState(
+            symbol=symbol,
+            base_size=base_size,
+            base_leverage=base_leverage,
+            current_level=1,
+            total_size=base_size,
+            current_leverage=base_leverage
+        )
+        logger.debug(f"Initialized pyramid state for {symbol}: size={base_size}, leverage={base_leverage}x")
+        self._save_state()
+    
+    def clear_pyramid_state(self, symbol: str):
+        """Clear pyramid state when position is closed"""
+        if symbol in self.pyramid_states:
+            del self.pyramid_states[symbol]
+            logger.debug(f"Cleared pyramid state for {symbol}")
+            self._save_state()
+    
+    def get_pyramid_status(self) -> Dict:
+        """
+        Get current pyramid status for all positions.
+        Used by API endpoint.
+        """
+        status = {
+            'enabled': self.config.pyramid_config.enabled,
+            'max_levels': self.config.pyramid_config.max_pyramid_levels,
+            'positions': {}
+        }
+        
+        for symbol, state in self.pyramid_states.items():
+            status['positions'][symbol] = {
+                'symbol': symbol,
+                'current_level': state.current_level,
+                'base_size': state.base_size,
+                'total_size': state.total_size,
+                'base_leverage': state.base_leverage,
+                'current_leverage': state.current_leverage,
+                'can_pyramid': state.current_level < self.config.pyramid_config.max_pyramid_levels,
+                'next_level_threshold': (
+                    self.config.pyramid_config.level_2_roe_threshold 
+                    if state.current_level == 1 
+                    else self.config.pyramid_config.level_3_roe_threshold
+                    if state.current_level == 2 
+                    else None
+                ),
+                'pyramid_history': state.pyramid_history,
+                'last_pyramid_time': state.last_pyramid_time.isoformat() if state.last_pyramid_time else None
+            }
+        
+        return status
+    
     def register_position(
         self,
         symbol: str,
@@ -431,7 +995,8 @@ class RiskManager:
         size: float,
         entry_price: float,
         stop_loss: float,
-        strategy_id: str
+        strategy_id: str,
+        leverage: int = 5
     ):
         """Register a new position with the risk manager"""
         # Calculate risk
@@ -460,7 +1025,10 @@ class RiskManager:
         self._update_portfolio_heat()
         self.daily_stats['trades'] += 1
         
-        logger.info(f"🛡️ Registered position: {side} {symbol}, risk={portfolio_risk_pct:.2f}% of portfolio")
+        # Initialize pyramid state for this position
+        self.init_pyramid_state(symbol, size, leverage)
+        
+        logger.info(f"🛡️ Registered position: {side} {symbol}, risk={portfolio_risk_pct:.2f}% of portfolio, leverage={leverage}x")
         self._save_state()
     
     def update_position(self, symbol: str, current_price: float):
@@ -504,6 +1072,9 @@ class RiskManager:
         # Remove position
         del self.positions[symbol]
         self._update_portfolio_heat()
+        
+        # Clear pyramid state
+        self.clear_pyramid_state(symbol)
         
         # Check circuit breakers
         self._check_circuit_breakers()
@@ -603,6 +1174,13 @@ class RiskManager:
         logger.critical(f"🛑 CIRCUIT BREAKER TRIGGERED: {reason}")
         logger.critical(f"   Trading halted until {self.circuit_breaker.cooldown_until.isoformat()}")
         
+        # Reset all positions to minimum leverage
+        min_lev = self.config.leverage_config.min_leverage
+        for symbol, state in self.pyramid_states.items():
+            if state.current_leverage > min_lev:
+                logger.warning(f"   Resetting {symbol} leverage: {state.current_leverage}x -> {min_lev}x")
+                state.current_leverage = min_lev
+        
         self._save_state()
     
     def _get_correlation_group(self, symbol: str) -> Optional[str]:
@@ -699,6 +1277,16 @@ class RiskManager:
                 }
                 for symbol, p in self.positions.items()
             },
+            'leverage': {
+                'config': {
+                    'low_confidence_leverage': self.config.leverage_config.low_confidence_leverage,
+                    'medium_confidence_leverage': self.config.leverage_config.medium_confidence_leverage,
+                    'high_confidence_leverage': self.config.leverage_config.high_confidence_leverage,
+                    'absolute_max': self.config.leverage_config.absolute_max_leverage,
+                    'min': self.config.leverage_config.min_leverage
+                }
+            },
+            'pyramiding': self.get_pyramid_status(),
             'config': {
                 'max_position_risk_pct': self.config.max_position_risk_pct,
                 'max_total_risk_pct': self.config.max_total_risk_pct,
@@ -729,7 +1317,22 @@ class RiskManager:
                         self.circuit_breaker.cooldown_until = cooldown
                         logger.warning(f"🛑 Circuit breaker still active: {self.circuit_breaker.trigger_reason}")
                 
-                logger.info(f"Loaded risk state: {len(self.strategy_stats)} strategies tracked")
+                # Restore pyramid states
+                pyramid_data = state.get('pyramid_states', {})
+                for symbol, pdata in pyramid_data.items():
+                    last_time = pdata.get('last_pyramid_time')
+                    self.pyramid_states[symbol] = PyramidState(
+                        symbol=symbol,
+                        base_size=pdata.get('base_size', 0),
+                        base_leverage=pdata.get('base_leverage', 5),
+                        current_level=pdata.get('current_level', 1),
+                        total_size=pdata.get('total_size', pdata.get('base_size', 0)),
+                        current_leverage=pdata.get('current_leverage', pdata.get('base_leverage', 5)),
+                        pyramid_history=pdata.get('pyramid_history', []),
+                        last_pyramid_time=datetime.fromisoformat(last_time) if last_time else None
+                    )
+                
+                logger.info(f"Loaded risk state: {len(self.strategy_stats)} strategies, {len(self.pyramid_states)} pyramid states")
             except Exception as e:
                 logger.error(f"Error loading risk state: {e}")
     
@@ -737,6 +1340,20 @@ class RiskManager:
         """Persist state to disk"""
         state_file = DATA_DIR / 'risk_manager_state.json'
         try:
+            # Serialize pyramid states
+            pyramid_data = {}
+            for symbol, state in self.pyramid_states.items():
+                pyramid_data[symbol] = {
+                    'symbol': state.symbol,
+                    'base_size': state.base_size,
+                    'base_leverage': state.base_leverage,
+                    'current_level': state.current_level,
+                    'total_size': state.total_size,
+                    'current_leverage': state.current_leverage,
+                    'pyramid_history': state.pyramid_history,
+                    'last_pyramid_time': state.last_pyramid_time.isoformat() if state.last_pyramid_time else None
+                }
+            
             state = {
                 'strategy_stats': self.strategy_stats,
                 'peak_equity': self.peak_equity,
@@ -745,6 +1362,7 @@ class RiskManager:
                     'trigger_reason': self.circuit_breaker.trigger_reason,
                     'cooldown_until': self.circuit_breaker.cooldown_until.isoformat() if self.circuit_breaker.cooldown_until else None
                 },
+                'pyramid_states': pyramid_data,
                 'daily_stats': self.daily_stats,
                 'saved_at': datetime.utcnow().isoformat()
             }

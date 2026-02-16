@@ -491,6 +491,129 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
             except Exception as e:
                 self._send_json({'error': str(e), 'positions': {}, 'stats': {}})
         
+        elif path == '/pyramid':
+            # Get pyramiding status - full visibility into position scaling
+            try:
+                from orchestrator.risk_manager import RiskManager, RiskConfig
+                from execution.kucoin import KuCoinFuturesExecutor
+                from execution.strategy_tracker import tracker
+                
+                # Get or create risk manager
+                if hasattr(orch, 'risk_manager'):
+                    rm = orch.risk_manager
+                else:
+                    executor = KuCoinFuturesExecutor()
+                    balance = float(executor.get_account_overview().get('availableBalance', 0)) if executor.is_configured else 1000
+                    rm = RiskManager(equity=balance)
+                
+                pyramid_status = rm.get_pyramid_status()
+                
+                # Enrich with live position data
+                if executor.is_configured:
+                    positions = executor.get_positions()
+                    for pos in positions:
+                        if pos.symbol in pyramid_status['positions']:
+                            pstate = pyramid_status['positions'][pos.symbol]
+                            pstate['live_pnl'] = pos.unrealized_pnl
+                            pstate['live_side'] = pos.side
+                            pstate['entry_price'] = pos.entry_price
+                            
+                            # Calculate ROE
+                            if pos.entry_price > 0 and pos.size > 0:
+                                roe = (pos.unrealized_pnl / (pos.size * pos.entry_price)) * 100 * pos.leverage
+                                pstate['current_roe_pct'] = round(roe, 2)
+                                
+                                # Check pyramid opportunity
+                                can_pyramid, details = rm.check_pyramid_opportunity(
+                                    pos.symbol,
+                                    pos.entry_price + (pos.unrealized_pnl / pos.size),  # Estimated current price
+                                    pos.entry_price,
+                                    pos.side
+                                )
+                                pstate['pyramid_ready'] = can_pyramid
+                                pstate['pyramid_details'] = details
+                
+                self._send_json({
+                    'success': True,
+                    'timestamp': datetime.utcnow().isoformat(),
+                    'pyramid_status': pyramid_status,
+                    'config': {
+                        'enabled': rm.config.pyramid_config.enabled,
+                        'max_levels': rm.config.pyramid_config.max_pyramid_levels,
+                        'level_2_threshold': rm.config.pyramid_config.level_2_roe_threshold,
+                        'level_3_threshold': rm.config.pyramid_config.level_3_roe_threshold,
+                        'leverage_bump': rm.config.pyramid_config.leverage_bump_per_level,
+                        'max_leverage': rm.config.leverage_config.absolute_max_leverage
+                    }
+                })
+            except Exception as e:
+                logger.error(f"Error getting pyramid status: {e}")
+                self._send_json({'error': str(e)})
+        
+        elif path == '/leverage':
+            # Get leverage configuration and current usage
+            try:
+                from orchestrator.risk_manager import RiskManager, RiskConfig
+                
+                if hasattr(orch, 'risk_manager'):
+                    rm = orch.risk_manager
+                else:
+                    rm = RiskManager(equity=1000)
+                
+                lev_config = rm.config.leverage_config
+                
+                # Get strategy bonuses
+                strategy_bonuses = {}
+                for strategy_id, stats in rm.strategy_stats.items():
+                    bonus = rm._calculate_strategy_leverage_bonus(strategy_id)
+                    trades = stats.get('trades', 0)
+                    wins = stats.get('wins', 0)
+                    strategy_bonuses[strategy_id] = {
+                        'leverage_bonus': bonus,
+                        'trades': trades,
+                        'win_rate': (wins / trades * 100) if trades > 0 else 0
+                    }
+                
+                # Current leverage by position
+                position_leverage = {}
+                for symbol, pstate in rm.pyramid_states.items():
+                    position_leverage[symbol] = {
+                        'base_leverage': pstate.base_leverage,
+                        'current_leverage': pstate.current_leverage,
+                        'pyramid_level': pstate.current_level
+                    }
+                
+                self._send_json({
+                    'success': True,
+                    'timestamp': datetime.utcnow().isoformat(),
+                    'config': {
+                        'tiers': {
+                            'low': {
+                                'confidence_range': lev_config.low_confidence_range,
+                                'leverage_range': lev_config.low_confidence_leverage
+                            },
+                            'medium': {
+                                'confidence_range': lev_config.medium_confidence_range,
+                                'leverage_range': lev_config.medium_confidence_leverage
+                            },
+                            'high': {
+                                'confidence_range': lev_config.high_confidence_range,
+                                'leverage_range': lev_config.high_confidence_leverage
+                            }
+                        },
+                        'absolute_max': lev_config.absolute_max_leverage,
+                        'absolute_min': lev_config.min_leverage,
+                        'win_rate_bonus_threshold': lev_config.win_rate_bonus_threshold,
+                        'max_strategy_bonus': lev_config.max_strategy_bonus
+                    },
+                    'strategy_bonuses': strategy_bonuses,
+                    'position_leverage': position_leverage,
+                    'circuit_breaker_active': rm.circuit_breaker.is_triggered
+                })
+            except Exception as e:
+                logger.error(f"Error getting leverage info: {e}")
+                self._send_json({'error': str(e)})
+        
         elif path == '/positions/summary':
             self._send_json({'summary': orch.position_manager.summary()})
         
