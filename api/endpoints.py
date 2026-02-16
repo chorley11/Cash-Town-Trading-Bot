@@ -18,6 +18,12 @@ from typing import Dict, List, Optional, Any, Tuple
 from pathlib import Path
 from dataclasses import dataclass, asdict
 
+# Import new strategies monitor
+try:
+    from scripts.monitor_new_strategies import NewStrategiesMonitor
+except ImportError:
+    NewStrategiesMonitor = None
+
 logger = logging.getLogger(__name__)
 
 DATA_DIR = Path(os.environ.get('DATA_DIR', '/app/data'))
@@ -1002,6 +1008,182 @@ class DashboardAPI:
                 'count': len(candles)
             }
         ).to_dict()
+    
+    # ==========================================
+    # NEW STRATEGIES ENDPOINTS (Feb 2026)
+    # ==========================================
+    
+    def get_new_strategies_status(self) -> Dict:
+        """
+        GET /api/strategies/new
+        
+        Status of all 5 new futures-specific strategies:
+        - funding-fade
+        - oi-divergence  
+        - liquidation-hunter
+        - volatility-breakout
+        - correlation-pairs
+        
+        Returns current conditions, active signals, and health status.
+        """
+        if NewStrategiesMonitor is None:
+            return APIResponse(
+                success=False,
+                data=None,
+                metadata={'error': 'NewStrategiesMonitor not available'}
+            ).to_dict()
+        
+        try:
+            monitor = NewStrategiesMonitor()
+            
+            # Get strategy statuses
+            strategies = monitor.get_all_strategy_status()
+            
+            # Get full report for detailed data
+            report = monitor.get_full_report()
+            
+            response_data = {
+                'timestamp': datetime.utcnow().isoformat(),
+                'strategies': [
+                    {
+                        'strategy_id': s.strategy_id,
+                        'name': s.name,
+                        'enabled': s.enabled,
+                        'active_signals': s.active_signals,
+                        'symbols_watching': s.symbols_watching,
+                        'conditions': s.current_conditions,
+                        'health': s.health,
+                        'last_signal': s.last_signal_time
+                    }
+                    for s in strategies
+                ],
+                'summary': {
+                    'total_strategies': len(strategies),
+                    'total_active_signals': sum(s.active_signals for s in strategies),
+                    'symbols_monitored': report['summary']['total_symbols_monitored'],
+                    'overall_health': 'ok' if all(s.health == 'ok' for s in strategies) else 'warning'
+                },
+                'details': {
+                    'funding_extremes': [
+                        {'symbol': k, 'rate_pct': v['rate_pct'], 'sentiment': v['sentiment']}
+                        for k, v in report['funding_rates'].items()
+                        if v['signal_strength'] > 0.5
+                    ],
+                    'oi_divergences': [
+                        {'symbol': k, 'signal': v['divergence_signal'], 'change_1h': v['change_1h_pct']}
+                        for k, v in report['open_interest'].items()
+                        if v['divergence_signal']
+                    ],
+                    'active_squeezes': [
+                        {'symbol': k, 'squeeze_candles': v['squeeze_candles'], 'bb_width_pctl': v['bb_width_percentile']}
+                        for k, v in report['squeeze_patterns'].items()
+                        if v['in_squeeze']
+                    ],
+                    'correlation_signals': [
+                        {'pair': k, 'zscore': v['spread_zscore'], 'signal': v['signal']}
+                        for k, v in report['correlations'].items()
+                        if v['signal']
+                    ]
+                }
+            }
+            
+            return APIResponse(
+                success=True,
+                data=response_data,
+                metadata={'source': 'live', 'cached': False}
+            ).to_dict()
+            
+        except Exception as e:
+            logger.error(f"Error getting new strategies status: {e}")
+            return APIResponse(
+                success=False,
+                data=None,
+                metadata={'error': str(e)}
+            ).to_dict()
+    
+    def get_futures_data(self) -> Dict:
+        """
+        GET /api/futures-data
+        
+        Current funding rates and open interest for all monitored symbols.
+        Real-time futures-specific market data.
+        """
+        if NewStrategiesMonitor is None:
+            return APIResponse(
+                success=False,
+                data=None,
+                metadata={'error': 'NewStrategiesMonitor not available'}
+            ).to_dict()
+        
+        try:
+            monitor = NewStrategiesMonitor()
+            
+            funding_rates = monitor.get_funding_rates()
+            open_interest = monitor.get_open_interest()
+            
+            response_data = {
+                'timestamp': datetime.utcnow().isoformat(),
+                'funding_rates': {
+                    symbol: {
+                        'rate': data.current_rate,
+                        'rate_pct': data.rate_pct,
+                        'annualized_pct': data.annualized_pct,
+                        'sentiment': data.sentiment,
+                        'signal_strength': data.signal_strength,
+                        'next_funding': data.next_funding_time
+                    }
+                    for symbol, data in funding_rates.items()
+                },
+                'open_interest': {
+                    symbol: {
+                        'oi': data.open_interest,
+                        'oi_value_usd': data.open_interest_value_usd,
+                        'mark_price': data.mark_price,
+                        'change_1h_pct': data.change_1h_pct,
+                        'change_4h_pct': data.change_4h_pct,
+                        'change_24h_pct': data.change_24h_pct,
+                        'divergence_signal': data.divergence_signal
+                    }
+                    for symbol, data in open_interest.items()
+                },
+                'summary': {
+                    'symbols_count': len(funding_rates),
+                    'avg_funding_rate': sum(d.current_rate for d in funding_rates.values()) / len(funding_rates) if funding_rates else 0,
+                    'extreme_funding_count': sum(1 for d in funding_rates.values() if d.signal_strength > 0.5),
+                    'divergence_signals_count': sum(1 for d in open_interest.values() if d.divergence_signal),
+                    'market_sentiment': self._calculate_market_sentiment(funding_rates)
+                }
+            }
+            
+            return APIResponse(
+                success=True,
+                data=response_data,
+                metadata={'source': 'live', 'cached': False}
+            ).to_dict()
+            
+        except Exception as e:
+            logger.error(f"Error getting futures data: {e}")
+            return APIResponse(
+                success=False,
+                data=None,
+                metadata={'error': str(e)}
+            ).to_dict()
+    
+    def _calculate_market_sentiment(self, funding_rates: Dict) -> str:
+        """Calculate overall market sentiment from funding rates"""
+        if not funding_rates:
+            return 'unknown'
+        
+        bullish = sum(1 for d in funding_rates.values() if d.sentiment == 'bullish')
+        bearish = sum(1 for d in funding_rates.values() if d.sentiment == 'bearish')
+        total = len(funding_rates)
+        
+        if bearish > total * 0.6:
+            return 'over-leveraged-long'  # Market is very long
+        elif bullish > total * 0.6:
+            return 'over-leveraged-short'  # Market is very short
+        else:
+            return 'neutral'
     
     # ==========================================
     # HELPER METHODS

@@ -47,6 +47,7 @@ class RiskConfig:
         if self.strategy_boost_multipliers is None:
             # Default multipliers: star performers get bigger positions
             self.strategy_boost_multipliers = {
+                # Original strategies
                 'trend-following': 1.5,  # STAR: 51% WR, +$208 - BOOST 50%
                 'mean-reversion': 1.0,
                 'turtle': 1.0,
@@ -54,6 +55,14 @@ class RiskConfig:
                 'livermore': 1.0,
                 'bts-lynch': 0.8,
                 'zweig': 0.0,  # DISABLED: 14% WR
+                'rsi-divergence': 1.0,
+                'stat-arb': 1.0,
+                # New futures-specific strategies (Feb 2026) - start conservative
+                'funding-fade': 0.8,  # Contrarian - start smaller
+                'oi-divergence': 0.8,  # Needs validation
+                'liquidation-hunter': 0.6,  # High risk - small size
+                'volatility-breakout': 1.0,  # Standard
+                'correlation-pairs': 0.7,  # Pairs = split across 2 positions
             }
 
 @dataclass
