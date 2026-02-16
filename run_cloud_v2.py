@@ -472,7 +472,18 @@ class CloudRunnerV2:
                 risk_config=risk_config
             )
             
+            # Store engine reference for Dashboard API
+            self.engine = engine
+            
+            # Connect Dashboard API components
+            self.dashboard_api.set_orchestrator(self.orchestrator)
+            self.dashboard_api.set_executor(engine)
+            self.live_feed.set_orchestrator(self.orchestrator)
+            self.live_feed.set_executor(engine)
+            self.live_feed.start(update_interval=1.0)
+            
             logger.info(f"Executor initialized in {mode.value} mode")
+            logger.info(f"📊 Bloomberg Dashboard API connected")
             
             import requests
             ORCHESTRATOR_URL = f"http://localhost:{self.port}"
