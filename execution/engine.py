@@ -31,7 +31,7 @@ class RiskConfig:
     """Risk management configuration"""
     max_position_pct: float = 2.0  # Max 2% of account per position
     max_total_exposure_pct: float = 20.0  # Max 20% total exposure
-    max_positions: int = 5
+    max_positions: int = 50  # Effectively unlimited - risk manager handles via portfolio heat/correlation
     max_daily_loss_pct: float = 5.0  # Kill switch at 5% daily loss
     default_leverage: int = 5
     default_stop_loss_pct: float = 2.0  # 2% stop loss
