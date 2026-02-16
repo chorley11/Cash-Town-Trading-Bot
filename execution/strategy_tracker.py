@@ -31,9 +31,9 @@ class StrategyTracker:
     """Tracks which strategy opened which position"""
     
     def __init__(self, data_path: str = None):
-        self.data_path = data_path or os.path.expanduser(
-            "~/.openclaw/workspace/projects/cash-town/data/strategy_positions.json"
-        )
+        # Use DATA_DIR env var (set on Railway) or fallback to local path
+        data_dir = os.environ.get('DATA_DIR', '/app/data')
+        self.data_path = data_path or os.path.join(data_dir, 'strategy_positions.json')
         Path(self.data_path).parent.mkdir(parents=True, exist_ok=True)
         self.positions: Dict[str, TrackedTrade] = {}
         self.closed_trades: List[TrackedTrade] = []
