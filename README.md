@@ -145,3 +145,4 @@ Cash Town is designed to coordinate with your existing Cucurbit bot:
 2. **Paper trading mode** - Test strategies without real money
 3. **Separate KuCoin sub-account** - Isolate Cash Town from Cucurbit
 4. **Dashboard** - Visual monitoring of all agents
+
