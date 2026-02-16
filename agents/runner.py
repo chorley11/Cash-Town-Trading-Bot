@@ -86,25 +86,35 @@ class AgentRunner:
     
     def _cycle(self):
         """Run one signal generation cycle"""
-        self.logger.debug("Running signal cycle...")
+        self.logger.info(f"🔄 [{self.strategy_id}] Running cycle for {len(self.symbols)} symbols...")
         
         # Refresh market data
         self.data_feed.refresh_all()
         market_data = self.data_feed.get_market_data()
         
         if not market_data:
-            self.logger.warning("No market data available")
+            self.logger.warning(f"❌ [{self.strategy_id}] No market data available")
             return
         
+        # Log symbols with data
+        symbols_with_data = sum(1 for s in self.symbols if s in market_data and market_data.get(s))
+        self.logger.info(f"📊 [{self.strategy_id}] Data for {symbols_with_data}/{len(self.symbols)} symbols")
+        
         # Generate signals
-        signals = self.agent.generate_signals(market_data)
+        try:
+            signals = self.agent.generate_signals(market_data)
+        except Exception as e:
+            self.logger.error(f"❌ [{self.strategy_id}] generate_signals error: {e}")
+            import traceback
+            self.logger.error(traceback.format_exc())
+            signals = []
         
         if signals:
-            self.logger.info(f"Generated {len(signals)} signals")
+            self.logger.info(f"✅ [{self.strategy_id}] Generated {len(signals)} signals")
             for signal in signals:
                 self._report_signal(signal)
         else:
-            self.logger.debug("No signals generated")
+            self.logger.info(f"⏳ [{self.strategy_id}] No signals - market conditions not met")
         
         # Report health
         self._report_health(len(signals))

@@ -67,21 +67,38 @@ class TrendFollowingAgent(BaseStrategyAgent):
     
     def generate_signals(self, market_data: Dict[str, Any]) -> List[Signal]:
         signals = []
+        analyzed = 0
+        skipped_no_data = 0
+        skipped_conditions = 0
         
         for symbol in self.symbols:
             try:
                 data = market_data.get(symbol)
                 if not data or len(data.get('close', [])) < 50:
+                    skipped_no_data += 1
                     continue
                 
-                signal = self._analyze_symbol(symbol, data)
+                analyzed += 1
+                signal, reason = self._analyze_symbol_debug(symbol, data)
                 if signal:
                     signals.append(signal)
+                else:
+                    skipped_conditions += 1
                     
             except Exception as e:
                 logger.error(f"Error analyzing {symbol}: {e}")
         
+        if analyzed > 0:
+            logger.debug(f"[trend-following] Analyzed {analyzed}, skipped {skipped_no_data} (no data), {skipped_conditions} (conditions not met)")
+        
         return signals
+    
+    def _analyze_symbol_debug(self, symbol: str, data: Dict):
+        """Wrapper to add debug info"""
+        signal = self._analyze_symbol(symbol, data)
+        if signal:
+            return signal, "signal_generated"
+        return None, "conditions_not_met"
     
     def _analyze_symbol(self, symbol: str, data: Dict) -> Optional[Signal]:
         closes = np.array(data['close'])
