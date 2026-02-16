@@ -175,25 +175,25 @@ class CircuitBreakerState:
 
 @dataclass
 class RiskConfig:
-    """Risk management configuration"""
+    """Risk management configuration - FULL BLOODED MODE"""
     # Position sizing
-    max_position_risk_pct: float = 2.0      # Max risk per position (% of equity)
-    max_total_risk_pct: float = 10.0        # Max total portfolio risk
+    max_position_risk_pct: float = 5.0      # Max risk per position (% of equity) - was 2%
+    max_total_risk_pct: float = 30.0        # Max total portfolio risk - was 10%
     default_stop_loss_pct: float = 2.0      # Default stop distance
     
     # Kelly Criterion settings
     use_kelly: bool = True
-    kelly_fraction: float = 0.25            # Fraction of Kelly to use (conservative)
+    kelly_fraction: float = 0.5             # Half-Kelly - was 0.25 (quarter)
     min_trades_for_kelly: int = 20          # Need this many trades before using Kelly
     
     # Correlation limits
-    max_correlated_exposure_pct: float = 4.0  # Max exposure to correlated group
-    max_same_direction_positions: int = 4     # Max all-long or all-short
+    max_correlated_exposure_pct: float = 10.0  # Max exposure to correlated group - was 4%
+    max_same_direction_positions: int = 8      # Max all-long or all-short - was 4
     
     # Circuit breakers
-    max_daily_loss_pct: float = 5.0         # Halt if daily loss exceeds this
-    max_drawdown_pct: float = 15.0          # Halt if drawdown from peak exceeds this
-    circuit_breaker_cooldown_hours: float = 4.0  # How long to pause after trigger
+    max_daily_loss_pct: float = 10.0        # Halt if daily loss exceeds this - was 5%
+    max_drawdown_pct: float = 25.0          # Halt if drawdown from peak exceeds this - was 15%
+    circuit_breaker_cooldown_hours: float = 2.0  # How long to pause after trigger - was 4h
     
     # Volatility adjustments
     high_vol_reduction: float = 0.5         # Reduce size by 50% in high vol
