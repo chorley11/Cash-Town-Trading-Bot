@@ -1,0 +1,11 @@
+{
+  "agent_id": "trend-following",
+  "enabled": true,
+  "positions": [],
+  "trades": [],
+  "total_pnl": 0.0,
+  "win_count": 0,
+  "loss_count": 0,
+  "last_signal_time": null,
+  "metadata": {}
+}

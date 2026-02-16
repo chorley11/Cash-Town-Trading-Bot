@@ -6,6 +6,7 @@
     <title>💰 Cash Town + Cucurbit</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://unpkg.com/lightweight-charts@4.1.0/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         body { background: #0f0f23; color: #e0e0e0; font-family: 'Segoe UI', system-ui, sans-serif; }
         .card { background: #1a1a2e; border-radius: 12px; border: 1px solid #2a2a4a; }
@@ -15,6 +16,9 @@
         .tab.active { background: #2a2a4a; }
         .tab:hover { background: #252540; }
         .scrollable { max-height: 400px; overflow-y: auto; }
+        .tf-btn { transition: all 0.2s; }
+        .tf-btn:hover { background: #3b82f6; }
+        .chart-container { position: relative; }
         .btn { padding: 0.5rem 1rem; border-radius: 8px; cursor: pointer; transition: all 0.2s; }
         .btn-primary { background: #3b82f6; color: white; }
         .btn-primary:hover { background: #2563eb; }
@@ -42,7 +46,8 @@
         <!-- Tabs -->
         <div class="flex gap-2 mb-4 border-b border-gray-700 pb-2">
             <div class="tab active" onclick="showTab('overview')" id="tab-overview">📊 Overview</div>
-            <div class="tab" onclick="showTab('positions')" id="tab-positions">📈 Positions</div>
+            <div class="tab" onclick="showTab('charts')" id="tab-charts">📈 Charts</div>
+            <div class="tab" onclick="showTab('positions')" id="tab-positions">💼 Positions</div>
             <div class="tab" onclick="showTab('trades')" id="tab-trades">📜 Trades</div>
             <div class="tab" onclick="showTab('risk')" id="tab-risk">⚠️ Risk</div>
             <div class="tab" onclick="showTab('strategies')" id="tab-strategies">🎯 Strategies</div>
@@ -99,6 +104,94 @@
                 <div class="card p-4">
                     <h3 class="font-bold mb-2">💰 Cash Town Positions</h3>
                     <div id="positions-cashtown" class="overflow-x-auto"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Tab -->
+        <div id="panel-charts" class="hidden">
+            <!-- Chart Controls -->
+            <div class="card p-4 mb-4">
+                <div class="flex flex-wrap gap-4 items-center">
+                    <div>
+                        <label class="text-xs text-gray-400">Symbol</label>
+                        <select id="chart-symbol" class="bg-gray-800 border border-gray-700 rounded p-2 text-sm ml-2" onchange="loadChart()">
+                            <option value="BTC/USDT:USDT">BTC/USDT</option>
+                            <option value="ETH/USDT:USDT">ETH/USDT</option>
+                            <option value="SOL/USDT:USDT">SOL/USDT</option>
+                            <option value="XRP/USDT:USDT">XRP/USDT</option>
+                            <option value="DOGE/USDT:USDT">DOGE/USDT</option>
+                            <option value="BNB/USDT:USDT">BNB/USDT</option>
+                            <option value="ADA/USDT:USDT">ADA/USDT</option>
+                            <option value="AVAX/USDT:USDT">AVAX/USDT</option>
+                            <option value="LINK/USDT:USDT">LINK/USDT</option>
+                            <option value="MATIC/USDT:USDT">MATIC/USDT</option>
+                            <option value="ARB/USDT:USDT">ARB/USDT</option>
+                            <option value="OP/USDT:USDT">OP/USDT</option>
+                            <option value="PEPE/USDT:USDT">PEPE/USDT</option>
+                            <option value="WIF/USDT:USDT">WIF/USDT</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-400">Timeframe</label>
+                        <div class="inline-flex gap-1 ml-2">
+                            <button class="tf-btn px-3 py-1 rounded bg-gray-700 text-xs" data-tf="1m">1m</button>
+                            <button class="tf-btn px-3 py-1 rounded bg-gray-700 text-xs" data-tf="5m">5m</button>
+                            <button class="tf-btn px-3 py-1 rounded bg-blue-600 text-xs" data-tf="15m">15m</button>
+                            <button class="tf-btn px-3 py-1 rounded bg-gray-700 text-xs" data-tf="1h">1h</button>
+                            <button class="tf-btn px-3 py-1 rounded bg-gray-700 text-xs" data-tf="4h">4h</button>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-400">Indicators</label>
+                        <div class="inline-flex gap-2 ml-2">
+                            <label class="flex items-center gap-1 text-xs cursor-pointer">
+                                <input type="checkbox" id="show-rsi" onchange="toggleIndicator('rsi')"> RSI
+                            </label>
+                            <label class="flex items-center gap-1 text-xs cursor-pointer">
+                                <input type="checkbox" id="show-ma" checked onchange="toggleIndicator('ma')"> MA
+                            </label>
+                            <label class="flex items-center gap-1 text-xs cursor-pointer">
+                                <input type="checkbox" id="show-volume" checked onchange="toggleIndicator('volume')"> Vol
+                            </label>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="flex items-center gap-1 text-xs cursor-pointer">
+                            <input type="checkbox" id="show-trades" checked onchange="toggleTrades()"> 
+                            <span class="text-gray-400">Show Trades</span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Main Chart Container -->
+            <div class="card p-4 mb-4">
+                <div class="flex justify-between items-center mb-2">
+                    <h3 class="font-bold" id="chart-title">📈 BTC/USDT - 15m</h3>
+                    <div class="text-xs text-gray-400" id="chart-status">Loading...</div>
+                </div>
+                <div id="main-chart" style="height: 400px;"></div>
+            </div>
+            
+            <!-- RSI Chart (optional) -->
+            <div id="rsi-container" class="card p-4 mb-4 hidden">
+                <h3 class="font-bold mb-2 text-sm">RSI (14)</h3>
+                <div id="rsi-chart" style="height: 120px;"></div>
+            </div>
+            
+            <!-- Trade Analysis Section -->
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div class="card p-4">
+                    <h3 class="font-bold mb-2">📊 Trade Analysis</h3>
+                    <p class="text-gray-400 text-xs mb-3">Click a trade marker on the chart or select from list</p>
+                    <div id="trade-list" class="space-y-2 scrollable max-h-64"></div>
+                </div>
+                <div class="card p-4">
+                    <h3 class="font-bold mb-2">🔍 Trade Detail</h3>
+                    <div id="trade-detail" class="text-gray-400 text-sm">
+                        <p>Select a trade to view detailed analysis</p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -596,6 +689,612 @@
         // Initial load
         refresh();
         setInterval(refresh, 30000);
+
+        // ============================================
+        // TRADINGVIEW LIGHTWEIGHT CHARTS - TRADE VIZ
+        // ============================================
+        
+        let mainChart = null;
+        let candleSeries = null;
+        let volumeSeries = null;
+        let rsiChart = null;
+        let rsiSeries = null;
+        let ma20Series = null;
+        let ma50Series = null;
+        let tradeMarkers = [];
+        let slLines = [];
+        let tpLines = [];
+        let allTrades = [];
+        let currentSymbol = 'BTC/USDT:USDT';
+        let currentTimeframe = '15m';
+        
+        // Initialize chart when Charts tab is opened
+        function initMainChart() {
+            if (mainChart) return; // Already initialized
+            
+            const container = document.getElementById('main-chart');
+            mainChart = LightweightCharts.createChart(container, {
+                layout: {
+                    background: { color: '#1a1a2e' },
+                    textColor: '#d1d4dc',
+                },
+                grid: {
+                    vertLines: { color: '#2a2a4a' },
+                    horzLines: { color: '#2a2a4a' },
+                },
+                crosshair: {
+                    mode: LightweightCharts.CrosshairMode.Normal,
+                },
+                rightPriceScale: {
+                    borderColor: '#2a2a4a',
+                },
+                timeScale: {
+                    borderColor: '#2a2a4a',
+                    timeVisible: true,
+                    secondsVisible: false,
+                },
+                handleScroll: true,
+                handleScale: true,
+            });
+            
+            // Candlestick series
+            candleSeries = mainChart.addCandlestickSeries({
+                upColor: '#22c55e',
+                downColor: '#ef4444',
+                borderUpColor: '#22c55e',
+                borderDownColor: '#ef4444',
+                wickUpColor: '#22c55e',
+                wickDownColor: '#ef4444',
+            });
+            
+            // Volume series
+            volumeSeries = mainChart.addHistogramSeries({
+                color: '#3b82f6',
+                priceFormat: { type: 'volume' },
+                priceScaleId: '',
+                scaleMargins: { top: 0.85, bottom: 0 },
+            });
+            
+            // Moving Averages
+            ma20Series = mainChart.addLineSeries({
+                color: '#f59e0b',
+                lineWidth: 1,
+                title: 'MA20',
+            });
+            
+            ma50Series = mainChart.addLineSeries({
+                color: '#8b5cf6',
+                lineWidth: 1,
+                title: 'MA50',
+            });
+            
+            // Fit content
+            mainChart.timeScale().fitContent();
+            
+            // Handle resize
+            const resizeObserver = new ResizeObserver(() => {
+                if (mainChart) {
+                    mainChart.applyOptions({ width: container.clientWidth });
+                }
+            });
+            resizeObserver.observe(container);
+        }
+        
+        function initRsiChart() {
+            if (rsiChart) return;
+            
+            const container = document.getElementById('rsi-chart');
+            rsiChart = LightweightCharts.createChart(container, {
+                layout: {
+                    background: { color: '#1a1a2e' },
+                    textColor: '#d1d4dc',
+                },
+                grid: {
+                    vertLines: { color: '#2a2a4a' },
+                    horzLines: { color: '#2a2a4a' },
+                },
+                rightPriceScale: {
+                    borderColor: '#2a2a4a',
+                    scaleMargins: { top: 0.1, bottom: 0.1 },
+                },
+                timeScale: {
+                    borderColor: '#2a2a4a',
+                    visible: false,
+                },
+            });
+            
+            rsiSeries = rsiChart.addLineSeries({
+                color: '#f59e0b',
+                lineWidth: 2,
+            });
+            
+            // Add overbought/oversold lines
+            rsiChart.addLineSeries({
+                color: '#ef4444',
+                lineWidth: 1,
+                lineStyle: 2, // Dashed
+            });
+        }
+        
+        // Fetch candle data from API with fallback to Binance
+        async function fetchCandles(symbol, timeframe, limit = 300) {
+            // Try Cash Town API first
+            try {
+                const url = `${API}/market/candles?symbol=${encodeURIComponent(symbol)}&timeframe=${timeframe}&limit=${limit}`;
+                const resp = await authFetch(url);
+                if (resp.ok) {
+                    const data = await resp.json();
+                    if (data.candles && data.candles.length > 0) {
+                        return data.candles;
+                    }
+                }
+            } catch (e) {
+                console.warn('Cash Town API candles not available, using Binance fallback');
+            }
+            
+            // Fallback to Binance API (free, no auth)
+            try {
+                const binanceSymbol = symbol.replace('/', '').replace(':USDT', '');
+                const intervalMap = { '1m': '1m', '5m': '5m', '15m': '15m', '1h': '1h', '4h': '4h' };
+                const interval = intervalMap[timeframe] || '15m';
+                const url = `https://api.binance.com/api/v3/klines?symbol=${binanceSymbol}&interval=${interval}&limit=${limit}`;
+                const resp = await fetch(url);
+                const data = await resp.json();
+                
+                // Transform Binance format to our format
+                return data.map(k => ({
+                    timestamp: k[0],
+                    open: parseFloat(k[1]),
+                    high: parseFloat(k[2]),
+                    low: parseFloat(k[3]),
+                    close: parseFloat(k[4]),
+                    volume: parseFloat(k[5]),
+                }));
+            } catch (e) {
+                console.error('Failed to fetch candles from Binance:', e);
+                return [];
+            }
+        }
+        
+        // Fetch trades for chart overlay
+        async function fetchTradesForChart(symbol = null) {
+            try {
+                const url = symbol 
+                    ? `${API}/cucurbit/trades?symbol=${encodeURIComponent(symbol)}&limit=100`
+                    : `${API}/cucurbit/trades?limit=100`;
+                const resp = await authFetch(url);
+                const data = await resp.json();
+                return data.trades || [];
+            } catch (e) {
+                console.error('Failed to fetch trades:', e);
+                return [];
+            }
+        }
+        
+        // Load chart with data
+        async function loadChart() {
+            const symbol = document.getElementById('chart-symbol').value;
+            currentSymbol = symbol;
+            
+            document.getElementById('chart-status').textContent = 'Loading...';
+            document.getElementById('chart-title').textContent = `📈 ${symbol.split(':')[0]} - ${currentTimeframe}`;
+            
+            initMainChart();
+            
+            // Fetch candle data
+            const candles = await fetchCandles(symbol, currentTimeframe);
+            
+            if (candles.length === 0) {
+                document.getElementById('chart-status').textContent = 'No data available';
+                return;
+            }
+            
+            // Format data for LightweightCharts
+            const ohlcData = candles.map(c => ({
+                time: Math.floor(c.timestamp / 1000),
+                open: c.open,
+                high: c.high,
+                low: c.low,
+                close: c.close,
+            }));
+            
+            const volumeData = candles.map(c => ({
+                time: Math.floor(c.timestamp / 1000),
+                value: c.volume,
+                color: c.close >= c.open ? '#22c55e40' : '#ef444440',
+            }));
+            
+            // Calculate MAs
+            const ma20Data = calculateMA(ohlcData, 20);
+            const ma50Data = calculateMA(ohlcData, 50);
+            
+            // Set data
+            candleSeries.setData(ohlcData);
+            volumeSeries.setData(volumeData);
+            ma20Series.setData(ma20Data);
+            ma50Series.setData(ma50Data);
+            
+            // Update RSI if enabled
+            if (document.getElementById('show-rsi').checked) {
+                updateRsiChart(ohlcData);
+            }
+            
+            // Load and overlay trades
+            if (document.getElementById('show-trades').checked) {
+                await loadTradeMarkers(symbol);
+            }
+            
+            mainChart.timeScale().fitContent();
+            document.getElementById('chart-status').textContent = `${candles.length} candles loaded`;
+        }
+        
+        // Calculate Moving Average
+        function calculateMA(data, period) {
+            const result = [];
+            for (let i = period - 1; i < data.length; i++) {
+                let sum = 0;
+                for (let j = 0; j < period; j++) {
+                    sum += data[i - j].close;
+                }
+                result.push({
+                    time: data[i].time,
+                    value: sum / period,
+                });
+            }
+            return result;
+        }
+        
+        // Calculate RSI
+        function calculateRSI(data, period = 14) {
+            const result = [];
+            const gains = [];
+            const losses = [];
+            
+            for (let i = 1; i < data.length; i++) {
+                const change = data[i].close - data[i-1].close;
+                gains.push(change > 0 ? change : 0);
+                losses.push(change < 0 ? -change : 0);
+            }
+            
+            for (let i = period; i < gains.length; i++) {
+                const avgGain = gains.slice(i - period, i).reduce((a,b) => a+b, 0) / period;
+                const avgLoss = losses.slice(i - period, i).reduce((a,b) => a+b, 0) / period;
+                const rs = avgLoss === 0 ? 100 : avgGain / avgLoss;
+                const rsi = 100 - (100 / (1 + rs));
+                result.push({
+                    time: data[i + 1].time,
+                    value: rsi,
+                });
+            }
+            return result;
+        }
+        
+        // Update RSI chart
+        function updateRsiChart(ohlcData) {
+            initRsiChart();
+            const rsiData = calculateRSI(ohlcData);
+            rsiSeries.setData(rsiData);
+            
+            // Sync time scales
+            mainChart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+                if (rsiChart && range) {
+                    rsiChart.timeScale().setVisibleLogicalRange(range);
+                }
+            });
+        }
+        
+        // Load trade markers on chart
+        async function loadTradeMarkers(symbol) {
+            // Get trades
+            const trades = await fetchTradesForChart();
+            allTrades = trades;
+            
+            // Filter trades for this symbol
+            const symbolTrades = trades.filter(t => {
+                const tradeSymbol = t.symbol?.replace('/', '').replace(':USDT', '');
+                const chartSymbol = symbol.replace('/', '').replace(':USDT', '');
+                return tradeSymbol === chartSymbol || !symbol;
+            });
+            
+            // Create markers
+            const markers = [];
+            
+            symbolTrades.forEach((trade, idx) => {
+                const entryTime = Math.floor(new Date(trade.entryTimestamp || trade.openTime).getTime() / 1000);
+                const exitTime = Math.floor(new Date(trade.exitTimestamp || trade.closeTime).getTime() / 1000);
+                const isLong = trade.side === 'long';
+                const isWin = (trade.pnl || 0) >= 0;
+                
+                // Entry marker
+                markers.push({
+                    time: entryTime,
+                    position: isLong ? 'belowBar' : 'aboveBar',
+                    color: isLong ? '#22c55e' : '#ef4444',
+                    shape: isLong ? 'arrowUp' : 'arrowDown',
+                    text: `${isLong ? 'L' : 'S'} $${trade.entryPrice?.toFixed(2) || '?'}`,
+                    id: `entry-${idx}`,
+                });
+                
+                // Exit marker
+                if (exitTime && exitTime > entryTime) {
+                    markers.push({
+                        time: exitTime,
+                        position: isLong ? 'aboveBar' : 'belowBar',
+                        color: isWin ? '#22c55e' : '#ef4444',
+                        shape: 'circle',
+                        text: `${isWin ? '✓' : '✗'} $${(trade.pnl || 0).toFixed(2)}`,
+                        id: `exit-${idx}`,
+                    });
+                }
+            });
+            
+            // Sort markers by time
+            markers.sort((a, b) => a.time - b.time);
+            candleSeries.setMarkers(markers);
+            tradeMarkers = markers;
+            
+            // Update trade list
+            updateTradeList(symbolTrades);
+        }
+        
+        // Update trade list in sidebar
+        function updateTradeList(trades) {
+            const container = document.getElementById('trade-list');
+            if (trades.length === 0) {
+                container.innerHTML = '<div class="text-gray-500 text-sm">No trades for this symbol</div>';
+                return;
+            }
+            
+            const html = trades.slice(0, 20).map((t, idx) => {
+                const pnl = t.pnl || 0;
+                const isWin = pnl >= 0;
+                return `
+                    <div class="p-2 bg-gray-800/50 rounded cursor-pointer hover:bg-gray-700/50 transition" onclick="showTradeDetail(${idx})">
+                        <div class="flex justify-between">
+                            <span class="font-medium ${t.side === 'long' ? 'text-green-400' : 'text-red-400'}">
+                                ${t.side?.toUpperCase()} ${t.symbol?.split('/')[0] || '?'}
+                            </span>
+                            <span class="${isWin ? 'positive' : 'negative'}">$${pnl.toFixed(2)}</span>
+                        </div>
+                        <div class="text-xs text-gray-400 mt-1">
+                            ${t.strategyId || '?'} • ${new Date(t.exitTimestamp || t.closeTime).toLocaleDateString()}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+            container.innerHTML = html;
+        }
+        
+        // Show trade detail
+        function showTradeDetail(idx) {
+            const trades = allTrades;
+            const t = trades[idx];
+            if (!t) return;
+            
+            const entryTime = new Date(t.entryTimestamp || t.openTime);
+            const exitTime = new Date(t.exitTimestamp || t.closeTime);
+            const duration = (exitTime - entryTime) / 1000 / 60; // minutes
+            const pnl = t.pnl || 0;
+            const pnlPercent = t.entryPrice ? ((t.exitPrice - t.entryPrice) / t.entryPrice * 100 * (t.side === 'long' ? 1 : -1)).toFixed(2) : '?';
+            
+            // Determine exit reason
+            let exitReason = 'Unknown';
+            if (t.exitReason) {
+                exitReason = t.exitReason;
+            } else if (t.stopLoss && t.exitPrice <= t.stopLoss) {
+                exitReason = '🛑 Hit Stop Loss';
+            } else if (t.takeProfit && t.exitPrice >= t.takeProfit) {
+                exitReason = '🎯 Hit Take Profit';
+            } else {
+                exitReason = '✋ Manual Close / Strategy Exit';
+            }
+            
+            const html = `
+                <div class="space-y-3">
+                    <div class="flex justify-between items-center">
+                        <span class="text-lg font-bold ${t.side === 'long' ? 'text-green-400' : 'text-red-400'}">
+                            ${t.side?.toUpperCase()} ${t.symbol}
+                        </span>
+                        <span class="text-xl font-bold ${pnl >= 0 ? 'positive' : 'negative'}">
+                            ${pnl >= 0 ? '+' : ''}$${pnl.toFixed(2)}
+                        </span>
+                    </div>
+                    
+                    <div class="grid grid-cols-2 gap-2 text-sm">
+                        <div class="bg-gray-800/50 p-2 rounded">
+                            <div class="text-gray-400 text-xs">Entry</div>
+                            <div class="font-medium">$${t.entryPrice?.toFixed(4) || '?'}</div>
+                            <div class="text-xs text-gray-500">${entryTime.toLocaleString()}</div>
+                        </div>
+                        <div class="bg-gray-800/50 p-2 rounded">
+                            <div class="text-gray-400 text-xs">Exit</div>
+                            <div class="font-medium">$${t.exitPrice?.toFixed(4) || '?'}</div>
+                            <div class="text-xs text-gray-500">${exitTime.toLocaleString()}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="grid grid-cols-3 gap-2 text-sm">
+                        <div class="bg-gray-800/50 p-2 rounded text-center">
+                            <div class="text-gray-400 text-xs">ROI</div>
+                            <div class="${pnl >= 0 ? 'positive' : 'negative'}">${pnlPercent}%</div>
+                        </div>
+                        <div class="bg-gray-800/50 p-2 rounded text-center">
+                            <div class="text-gray-400 text-xs">Duration</div>
+                            <div>${duration < 60 ? duration.toFixed(0) + 'm' : (duration/60).toFixed(1) + 'h'}</div>
+                        </div>
+                        <div class="bg-gray-800/50 p-2 rounded text-center">
+                            <div class="text-gray-400 text-xs">Size</div>
+                            <div>${t.size || t.sizeUsd || '?'}</div>
+                        </div>
+                    </div>
+                    
+                    <div class="bg-gray-800/50 p-2 rounded">
+                        <div class="text-gray-400 text-xs">Exit Reason</div>
+                        <div class="font-medium">${exitReason}</div>
+                    </div>
+                    
+                    <div class="bg-gray-800/50 p-2 rounded">
+                        <div class="text-gray-400 text-xs">Strategy</div>
+                        <div class="font-medium">${t.strategyId || 'Unknown'}</div>
+                    </div>
+                    
+                    ${t.stopLoss || t.takeProfit ? `
+                    <div class="grid grid-cols-2 gap-2 text-sm">
+                        ${t.stopLoss ? `<div class="bg-red-900/30 p-2 rounded">
+                            <div class="text-red-400 text-xs">Stop Loss</div>
+                            <div>$${t.stopLoss.toFixed(4)}</div>
+                        </div>` : ''}
+                        ${t.takeProfit ? `<div class="bg-green-900/30 p-2 rounded">
+                            <div class="text-green-400 text-xs">Take Profit</div>
+                            <div>$${t.takeProfit.toFixed(4)}</div>
+                        </div>` : ''}
+                    </div>
+                    ` : ''}
+                    
+                    <button class="btn btn-primary w-full text-sm mt-2" onclick="focusTrade(${idx})">
+                        🔍 Focus on Chart
+                    </button>
+                </div>
+            `;
+            document.getElementById('trade-detail').innerHTML = html;
+        }
+        
+        // Focus chart on specific trade
+        function focusTrade(idx) {
+            const t = allTrades[idx];
+            if (!t || !mainChart) return;
+            
+            const entryTime = Math.floor(new Date(t.entryTimestamp || t.openTime).getTime() / 1000);
+            const exitTime = Math.floor(new Date(t.exitTimestamp || t.closeTime).getTime() / 1000);
+            
+            // Add some padding (1 hour before and after)
+            const padding = 3600;
+            mainChart.timeScale().setVisibleRange({
+                from: entryTime - padding,
+                to: exitTime + padding,
+            });
+            
+            // Clear existing price lines
+            clearPriceLines();
+            
+            // Add entry price line
+            if (t.entryPrice) {
+                const entryLine = candleSeries.createPriceLine({
+                    price: t.entryPrice,
+                    color: t.side === 'long' ? '#22c55e' : '#ef4444',
+                    lineWidth: 2,
+                    lineStyle: 0, // Solid
+                    axisLabelVisible: true,
+                    title: 'Entry',
+                });
+                slLines.push(entryLine);
+            }
+            
+            // Add exit price line
+            if (t.exitPrice) {
+                const exitLine = candleSeries.createPriceLine({
+                    price: t.exitPrice,
+                    color: '#3b82f6',
+                    lineWidth: 2,
+                    lineStyle: 0,
+                    axisLabelVisible: true,
+                    title: 'Exit',
+                });
+                tpLines.push(exitLine);
+            }
+            
+            // Add SL line if available
+            if (t.stopLoss) {
+                const slLine = candleSeries.createPriceLine({
+                    price: t.stopLoss,
+                    color: '#ef4444',
+                    lineWidth: 1,
+                    lineStyle: 2, // Dashed
+                    axisLabelVisible: true,
+                    title: 'SL',
+                });
+                slLines.push(slLine);
+            }
+            
+            // Add TP line if available
+            if (t.takeProfit) {
+                const tpLine = candleSeries.createPriceLine({
+                    price: t.takeProfit,
+                    color: '#22c55e',
+                    lineWidth: 1,
+                    lineStyle: 2, // Dashed
+                    axisLabelVisible: true,
+                    title: 'TP',
+                });
+                tpLines.push(tpLine);
+            }
+        }
+        
+        // Clear price lines
+        function clearPriceLines() {
+            slLines.forEach(line => {
+                try { candleSeries.removePriceLine(line); } catch(e) {}
+            });
+            tpLines.forEach(line => {
+                try { candleSeries.removePriceLine(line); } catch(e) {}
+            });
+            slLines = [];
+            tpLines = [];
+        }
+        
+        // Toggle indicators
+        function toggleIndicator(indicator) {
+            if (indicator === 'rsi') {
+                const show = document.getElementById('show-rsi').checked;
+                document.getElementById('rsi-container').classList.toggle('hidden', !show);
+                if (show) {
+                    loadChart(); // Reload to update RSI
+                }
+            } else if (indicator === 'ma') {
+                const show = document.getElementById('show-ma').checked;
+                if (ma20Series) ma20Series.applyOptions({ visible: show });
+                if (ma50Series) ma50Series.applyOptions({ visible: show });
+            } else if (indicator === 'volume') {
+                const show = document.getElementById('show-volume').checked;
+                if (volumeSeries) volumeSeries.applyOptions({ visible: show });
+            }
+        }
+        
+        // Toggle trades
+        function toggleTrades() {
+            const show = document.getElementById('show-trades').checked;
+            if (show) {
+                loadTradeMarkers(currentSymbol);
+            } else {
+                candleSeries.setMarkers([]);
+            }
+        }
+        
+        // Timeframe selection
+        document.querySelectorAll('.tf-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.tf-btn').forEach(b => b.classList.remove('bg-blue-600'));
+                btn.classList.add('bg-blue-600');
+                currentTimeframe = btn.dataset.tf;
+                loadChart();
+            });
+        });
+        
+        // Override tab switching to init charts
+        const originalShowTab = showTab;
+        showTab = function(tab) {
+            document.querySelectorAll('[id^="panel-"]').forEach(p => p.classList.add('hidden'));
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.getElementById(`panel-${tab}`).classList.remove('hidden');
+            document.getElementById(`tab-${tab}`).classList.add('active');
+            currentTab = tab;
+            
+            if (tab === 'charts') {
+                setTimeout(() => loadChart(), 100);
+            } else {
+                refresh();
+            }
+        };
     </script>
 </body>
 </html>
