@@ -28,18 +28,18 @@ class ExecutionMode(Enum):
 
 @dataclass
 class RiskConfig:
-    """Risk management configuration - FULL BLOODED MODE"""
-    max_position_pct: float = 5.0  # Max 5% of account per position (was 2%)
-    max_total_exposure_pct: float = 50.0  # Max 50% total exposure (was 20%)
-    max_positions: int = 50  # Effectively unlimited - risk manager handles via portfolio heat/correlation
-    max_daily_loss_pct: float = 10.0  # Kill switch at 10% daily loss (was 5%)
-    default_leverage: int = 7  # Default leverage (was 5)
+    """Risk management configuration - NO CAPS / KELLY DECIDES"""
+    max_position_pct: float = 100.0  # No cap - Kelly/risk manager decides size
+    max_total_exposure_pct: float = 100.0  # No cap - full send
+    max_positions: int = 50  # Effectively unlimited
+    max_daily_loss_pct: float = 15.0  # Kill switch at 15% daily loss - emergency only
+    default_leverage: int = 10  # Max leverage available
     default_stop_loss_pct: float = 2.0  # 2% stop loss
-    default_take_profit_pct: float = 6.0  # 6% take profit (was 4%) - let winners run
+    default_take_profit_pct: float = 8.0  # 8% take profit - let winners run far
     min_order_value_usd: float = 10.0
-    # DRAWDOWN PROTECTION: 15% account drop = reduce positions by this factor (was 10%)
-    drawdown_threshold_pct: float = 15.0
-    drawdown_reduction_factor: float = 0.7  # 30% smaller positions when in drawdown (was 50%)
+    # DRAWDOWN PROTECTION: 20% account drop = reduce positions
+    drawdown_threshold_pct: float = 20.0
+    drawdown_reduction_factor: float = 0.8  # Only 20% reduction in drawdown
     # STRATEGY PERFORMANCE MULTIPLIERS (dynamic sizing based on track record)
     strategy_boost_multipliers: Dict = None  # Set at runtime
     

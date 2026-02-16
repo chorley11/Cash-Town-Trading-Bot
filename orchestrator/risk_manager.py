@@ -175,16 +175,16 @@ class CircuitBreakerState:
 
 @dataclass
 class RiskConfig:
-    """Risk management configuration - FULL BLOODED MODE"""
-    # Position sizing
-    max_position_risk_pct: float = 5.0      # Max risk per position (% of equity) - was 2%
-    max_total_risk_pct: float = 30.0        # Max total portfolio risk - was 10%
+    """Risk management configuration - FULL BLOODED / NO CAPS"""
+    # Position sizing - NO ARTIFICIAL CAPS, Kelly decides
+    max_position_risk_pct: float = 100.0    # No cap - Kelly/confidence decides size
+    max_total_risk_pct: float = 100.0       # No cap - let it rip
     default_stop_loss_pct: float = 2.0      # Default stop distance
     
-    # Kelly Criterion settings
+    # Kelly Criterion settings - THE BOSS NOW
     use_kelly: bool = True
-    kelly_fraction: float = 0.5             # Half-Kelly - was 0.25 (quarter)
-    min_trades_for_kelly: int = 20          # Need this many trades before using Kelly
+    kelly_fraction: float = 0.75            # 75% Kelly - aggressive but not full Kelly
+    min_trades_for_kelly: int = 10          # Start using Kelly sooner (was 20)
     
     # Correlation limits
     max_correlated_exposure_pct: float = 10.0  # Max exposure to correlated group - was 4%
