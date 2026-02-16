@@ -239,11 +239,8 @@ class KuCoinFuturesExecutor:
         # Set margin mode first (handles 330005 error)
         self.set_margin_mode(symbol, margin_mode)
         
-        # Set leverage
-        self._request('POST', '/api/v1/position/risk-limit-level/change', {
-            'symbol': symbol,
-            'level': leverage
-        })
+        # Note: Leverage is set per-order, not via risk-limit-level API
+        # The risk-limit-level API is for position size tiers, not leverage
         
         data = {
             'clientOid': f"ct_{int(time.time()*1000)}",

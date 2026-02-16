@@ -33,7 +33,7 @@ class RiskConfig:
     max_total_exposure_pct: float = 100.0  # No cap - full send
     max_positions: int = 50  # Effectively unlimited
     max_daily_loss_pct: float = 15.0  # Kill switch at 15% daily loss - emergency only
-    default_leverage: int = 10  # Max leverage available
+    default_leverage: int = 5  # Safe leverage for all symbols (some max at 5x)
     default_stop_loss_pct: float = 2.0  # 2% stop loss
     default_take_profit_pct: float = 8.0  # 8% take profit - let winners run far
     min_order_value_usd: float = 10.0
