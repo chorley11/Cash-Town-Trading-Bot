@@ -142,6 +142,11 @@ class CloudRunnerV2:
         
         def watchdog_loop():
             from orchestrator.profit_watchdog import run_watchdog_cycle
+            from orchestrator.trailing_stops import get_trailing_manager
+            
+            trailing_manager = get_trailing_manager()
+            if hasattr(self, 'engine') and self.engine:
+                trailing_manager.executor = self.engine.executor
             
             while self.running:
                 try:
@@ -149,6 +154,11 @@ class CloudRunnerV2:
                     prices = self._get_current_prices()
                     if prices:
                         run_watchdog_cycle(self.orchestrator.watchdog, prices)
+                        
+                        # Update trailing stops
+                        adjustments = trailing_manager.update(prices)
+                        for adj in adjustments:
+                            logger.info(f"📈 Trailing stop adjusted: {adj['symbol']} -> ${adj['new_stop']:.2f}")
                 except Exception as e:
                     logger.error(f"Watchdog cycle error: {e}")
                 
@@ -823,6 +833,17 @@ class CloudRunnerV2:
             result = engine.execute_signal(agg_sig)
             if result and result.success:
                 logger.info(f"✅ Executed: {sig.side.value} {sig.symbol} (rank #{signal.get('rank', '?')}, {len(signal.get('sources', []))} sources)")
+                
+                # Register with trailing stop manager
+                from orchestrator.trailing_stops import get_trailing_manager
+                trailing_manager = get_trailing_manager()
+                stop_loss = sig.stop_loss or (result.price * (0.98 if sig.side == SignalSide.LONG else 1.02))
+                trailing_manager.register_position(
+                    symbol=sig.symbol,
+                    side=sig.side.value,
+                    entry_price=result.price,
+                    initial_stop=stop_loss
+                )
             else:
                 logger.info(f"⏭️ Skipped: {sig.symbol} - {result.message if result else 'no result'}")
             
