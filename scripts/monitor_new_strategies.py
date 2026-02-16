@@ -136,10 +136,11 @@ class NewStrategiesMonitor:
         """Lazy load data feed"""
         if self._data_feed is None:
             try:
-                from data.feed import KuCoinDataFeed
-                self._data_feed = KuCoinDataFeed(self.symbols, '15m')
+                from data.feed import DataFeedManager
+                self._data_feed = DataFeedManager(self.symbols, '15min')
+                self._data_feed.refresh()  # Initial fetch
             except Exception as e:
-                logger.warning(f"Could not load KuCoinDataFeed: {e}")
+                logger.warning(f"Could not load DataFeedManager: {e}")
         return self._data_feed
 
     # ==========================================
