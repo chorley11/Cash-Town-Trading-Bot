@@ -150,7 +150,9 @@ class CloudRunnerV2:
                                 'strategy_id': s.signal.strategy_id,
                                 'rank': s.rank,
                                 'consensus': s.consensus_score,
-                                'sources': s.sources
+                                'sources': s.sources,
+                                'risk_position_size': s.signal.metadata.get('risk_position_size'),
+                                'risk_meta': s.signal.metadata.get('risk_meta', {})
                             }
                             for s in signals
                         ]
@@ -391,6 +393,15 @@ class CloudRunnerV2:
                         p.symbol: 'long' if p.is_long else 'short'
                         for p in engine.positions.values()
                     }
+                    
+                    # Update risk manager with current equity
+                    self.orchestrator.update_equity(engine.account_balance)
+                    
+                    # Check if trading is allowed (circuit breaker)
+                    can_trade, reason = self.orchestrator.can_trade()
+                    if not can_trade:
+                        logger.warning(f"🛑 Trading halted: {reason}")
+                    
                     monitor.end_stage('refresh_state')
                     
                     # DYNAMIC MULTIPLIERS: Periodically update strategy position multipliers
