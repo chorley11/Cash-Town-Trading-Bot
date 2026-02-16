@@ -18,10 +18,45 @@ Each agent runs independently with its own logic. Position sizes are **dynamical
 | **Zweig** | Martin Zweig | Breadth thrust signals | **DISABLED** (14% WR) | 0.0x |
 | **Stat Arb** | Pairs trading | Mean-revert spreads | Available | 1.0x |
 
-### 🛡️ Risk Controls
-- **Drawdown Protection**: When account drops 10% from peak, position sizes reduced by 50%
-- **Dynamic Strategy Weighting**: Winners get bigger positions, losers get smaller/disabled
-- **Daily Loss Limit**: Kill switch at 5% daily loss
+### 🛡️ Risk Management (Central Risk Manager)
+All signals pass through a centralized `RiskManager` before execution:
+
+#### Position Sizing
+- **Kelly Criterion**: Uses win rate and win/loss ratio to calculate optimal bet size (25% Kelly fraction for safety)
+- **Fixed Fractional Fallback**: Max 2% equity risk per position when not enough Kelly data
+- **Confidence Scaling**: Position size scaled by signal confidence (0.5x to 1.0x)
+
+#### Portfolio Heat Tracking
+- **Total Risk Cap**: Max 10% of portfolio at risk simultaneously
+- **Per-Group Limits**: Max 4% exposure to correlated assets (e.g., all alt L1s)
+- **Same-Direction Cap**: Max 4 positions all long or all short
+
+#### Correlation Detection
+Assets grouped by correlation:
+- `btc_ecosystem`: BTC
+- `eth_ecosystem`: ETH  
+- `alt_l1`: SOL, AVAX, NEAR, APT, SUI, TON, ICP
+- `defi`: UNI, LINK, INJ
+- `l2`: MATIC, ARB, OP
+- `cosmos`: ATOM, TIA
+- `old_guard`: LTC, BCH, XRP, ADA, DOT
+- `storage`: FIL, RENDER
+
+#### Circuit Breakers
+- **Daily Loss Limit**: Trading halts at 5% daily loss (4-hour cooldown)
+- **Max Drawdown**: Trading halts at 15% drawdown from peak
+- **Auto-Reset**: Breakers reset on new day or after cooldown
+
+#### Volatility Scaling
+- **Normal**: Full position size
+- **High Vol**: 50% position reduction
+- **Extreme Vol**: 75% position reduction
+
+#### API Endpoints
+```
+GET /risk         - Full risk manager status
+GET /can_trade    - Check if circuit breaker allows trading
+```
 
 ### 🔄 Active Position Rotation
 The orchestrator actively manages positions:
