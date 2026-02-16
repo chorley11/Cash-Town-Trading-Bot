@@ -908,38 +908,46 @@
             const startTime = Date.now();
             
             try {
-                // Fetch from Cash Town API
-                const [health, signals, learning, risk, canTrade] = await Promise.all([
+                // Fetch from Cash Town API (new /api/* endpoints)
+                const [health, portfolio, positions, trades, strategies, signals, risk] = await Promise.all([
                     fetchWithTimeout(`${API_BASE}/health`),
-                    fetchWithTimeout(`${API_BASE}/signals`),
-                    fetchWithTimeout(`${API_BASE}/learning`),
-                    fetchWithTimeout(`${API_BASE}/risk`),
-                    fetchWithTimeout(`${API_BASE}/can_trade`)
+                    fetchWithTimeout(`${API_BASE}/api/portfolio`).catch(() => null),
+                    fetchWithTimeout(`${API_BASE}/api/positions`).catch(() => null),
+                    fetchWithTimeout(`${API_BASE}/api/trades?limit=50`).catch(() => null),
+                    fetchWithTimeout(`${API_BASE}/api/strategies`).catch(() => null),
+                    fetchWithTimeout(`${API_BASE}/api/signals?limit=20`).catch(() => null),
+                    fetchWithTimeout(`${API_BASE}/api/risk`).catch(() => null)
                 ]);
                 
-                // Fetch from Cucurbit API (for positions/trades)
+                // Fetch from Cucurbit API (for comparison)
                 const [cucurbitStatus, cucurbitTrades] = await Promise.all([
                     fetchWithTimeout(`${CUCURBIT_API}/status`).catch(() => null),
                     fetchWithTimeout(`${CUCURBIT_API}/trades`).catch(() => null)
                 ]);
                 
-                // Update state
+                // Update state from new API
                 state.connected = true;
-                state.signals = signals?.signals || [];
-                state.strategies = learning?.strategies || {};
-                state.risk = risk || {};
-                state.canTrade = canTrade?.can_trade ?? true;
-                state.canTradeReason = canTrade?.reason || '';
+                state.signals = signals?.data || [];
+                state.strategies = strategies?.data || {};
+                state.risk = risk?.data || {};
+                state.canTrade = !risk?.data?.circuit_breaker?.is_triggered ?? true;
+                state.canTradeReason = risk?.data?.circuit_breaker?.trigger_reason || '';
                 
-                if (cucurbitStatus) {
-                    state.positions = cucurbitStatus.positions || [];
-                    state.equity = cucurbitStatus.balance || 0;
-                    state.mode = cucurbitStatus.mode || 'paper';
-                    state.unrealizedPnl = state.positions.reduce((sum, p) => sum + (p.unrealized_pnl || 0), 0);
+                // Use Cash Town portfolio data
+                if (portfolio?.data) {
+                    state.equity = portfolio.data.equity?.total || 0;
+                    state.unrealizedPnl = portfolio.data.pnl?.unrealized || 0;
+                    state.mode = 'LIVE';
                 }
                 
-                if (cucurbitTrades) {
-                    state.trades = cucurbitTrades.trades || cucurbitTrades || [];
+                // Use Cash Town positions
+                if (positions?.data) {
+                    state.positions = positions.data || [];
+                }
+                
+                // Use Cash Town trades
+                if (trades?.data) {
+                    state.trades = trades.data || [];
                 }
                 
                 // Calculate totals from learning data
