@@ -57,6 +57,7 @@ AGENT_CONFIGS = [
     {'id': 'livermore', 'symbols': ALL_SYMBOLS, 'interval': 300},
     {'id': 'bts-lynch', 'symbols': ALL_SYMBOLS, 'interval': 300},
     {'id': 'zweig', 'symbols': ALL_SYMBOLS, 'interval': 300},  # FIXED: v2 with thrust detection
+    {'id': 'rsi-divergence', 'symbols': ALL_SYMBOLS, 'interval': 300},  # NEW: catches reversals early
 ]
 
 class CloudRunnerV2:
