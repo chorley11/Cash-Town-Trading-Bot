@@ -765,7 +765,7 @@ class CloudRunnerV2:
                     monitor.start_stage('refresh_state')
                     engine.refresh_state()
                     self.orchestrator.positions = {
-                        p.symbol: 'long' if p.is_long else 'short'
+                        p.symbol: p.side
                         for p in engine.positions.values()
                     }
                     
