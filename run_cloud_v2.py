@@ -203,20 +203,159 @@ class CloudRunnerV2:
             return {}
     
     def _start_http_server(self):
-        """Start HTTP server for receiving signals"""
+        """Start HTTP server for receiving signals + Bloomberg Dashboard API"""
         from http.server import HTTPServer, BaseHTTPRequestHandler
+        from urllib.parse import urlparse, parse_qs
         import json
         
         orchestrator = self.orchestrator
+        dashboard_api = self.dashboard_api
+        live_feed = self.live_feed
+        runner_ref = self  # Reference for data feed
         
         class SignalHandler(BaseHTTPRequestHandler):
             def log_message(self, format, *args):
                 pass  # Suppress HTTP logs
             
+            def _parse_query(self):
+                """Parse query parameters"""
+                parsed = urlparse(self.path)
+                return parse_qs(parsed.query)
+            
+            def _get_path(self):
+                """Get path without query string"""
+                return urlparse(self.path).path
+            
             def do_GET(self):
-                if self.path == '/health':
-                    self._respond(200, {'status': 'healthy'})
-                elif self.path == '/signals':
+                path = self._get_path()
+                query = self._parse_query()
+                
+                # ===========================================
+                # BLOOMBERG DASHBOARD API ENDPOINTS
+                # ===========================================
+                
+                # GET /api/portfolio - Portfolio overview
+                if path == '/api/portfolio':
+                    self._respond(200, dashboard_api.get_portfolio())
+                    return
+                
+                # GET /api/positions - All positions
+                elif path == '/api/positions':
+                    include_closed = query.get('include_closed', ['false'])[0].lower() == 'true'
+                    self._respond(200, dashboard_api.get_positions(include_closed=include_closed))
+                    return
+                
+                # GET /api/position/:symbol - Single position
+                elif path.startswith('/api/position/'):
+                    symbol = path.split('/')[-1]
+                    self._respond(200, dashboard_api.get_position(symbol))
+                    return
+                
+                # GET /api/trades - Trade history with filters
+                elif path == '/api/trades':
+                    self._respond(200, dashboard_api.get_trades(
+                        strategy=query.get('strategy', [None])[0],
+                        symbol=query.get('symbol', [None])[0],
+                        side=query.get('side', [None])[0],
+                        start_date=query.get('start_date', [None])[0],
+                        end_date=query.get('end_date', [None])[0],
+                        min_pnl=float(query.get('min_pnl', [0])[0]) if query.get('min_pnl') else None,
+                        max_pnl=float(query.get('max_pnl', [0])[0]) if query.get('max_pnl') else None,
+                        won_only=query.get('won_only', [None])[0] == 'true' if query.get('won_only') else None,
+                        limit=int(query.get('limit', ['100'])[0]),
+                        offset=int(query.get('offset', ['0'])[0])
+                    ))
+                    return
+                
+                # GET /api/trade/:id - Single trade
+                elif path.startswith('/api/trade/'):
+                    trade_id = path.split('/')[-1]
+                    self._respond(200, dashboard_api.get_trade(trade_id))
+                    return
+                
+                # GET /api/strategies - Strategy performance
+                elif path == '/api/strategies':
+                    self._respond(200, dashboard_api.get_strategies())
+                    return
+                
+                # GET /api/strategy/:id - Single strategy detail
+                elif path.startswith('/api/strategy/'):
+                    strategy_id = path.split('/')[-1]
+                    self._respond(200, dashboard_api.get_strategy(strategy_id))
+                    return
+                
+                # GET /api/signals - Signal history (NOT internal /signals)
+                elif path == '/api/signals':
+                    accepted = None
+                    if query.get('accepted'):
+                        accepted = query['accepted'][0].lower() == 'true'
+                    self._respond(200, dashboard_api.get_signals(
+                        accepted=accepted,
+                        strategy=query.get('strategy', [None])[0],
+                        symbol=query.get('symbol', [None])[0],
+                        limit=int(query.get('limit', ['100'])[0]),
+                        offset=int(query.get('offset', ['0'])[0])
+                    ))
+                    return
+                
+                # GET /api/risk - Risk metrics
+                elif path == '/api/risk':
+                    self._respond(200, dashboard_api.get_risk())
+                    return
+                
+                # GET /api/chart/:symbol - OHLCV chart data
+                elif path.startswith('/api/chart/'):
+                    symbol = path.split('/')[-1]
+                    self._respond(200, dashboard_api.get_chart(
+                        symbol=symbol,
+                        interval=query.get('interval', ['15m'])[0],
+                        limit=int(query.get('limit', ['200'])[0])
+                    ))
+                    return
+                
+                # GET /api/ws/events - Recent WebSocket events for catch-up
+                elif path == '/api/ws/events':
+                    limit = int(query.get('limit', ['50'])[0])
+                    event_types = query.get('types', [None])[0]
+                    types_list = event_types.split(',') if event_types else None
+                    self._respond(200, {
+                        'events': live_feed.get_recent_events(limit=limit, event_types=types_list),
+                        'metadata': {'count': limit}
+                    })
+                    return
+                
+                # GET /api/ws/snapshot - Current state snapshot
+                elif path == '/api/ws/snapshot':
+                    self._respond(200, live_feed.get_snapshot())
+                    return
+                
+                # GET /api/stream - Server-Sent Events for real-time updates
+                elif path == '/api/stream':
+                    self._stream_events()
+                    return
+                
+                # GET /api/summary - Quick summary for dashboard header
+                elif path == '/api/summary':
+                    portfolio = dashboard_api.get_portfolio()['data']
+                    self._respond(200, {
+                        'equity': portfolio['equity']['total'],
+                        'pnl': portfolio['pnl']['unrealized'],
+                        'pnl_pct': portfolio['pnl']['unrealized_pct'],
+                        'positions': portfolio['positions']['count'],
+                        'exposure_pct': portfolio['exposure']['exposure_pct'],
+                        'win_rate': portfolio['performance']['win_rate'],
+                        'circuit_breaker': portfolio['risk']['circuit_breaker_active'],
+                        'timestamp': portfolio['timestamp']
+                    })
+                    return
+                
+                # ===========================================
+                # ORIGINAL INTERNAL ENDPOINTS
+                # ===========================================
+                
+                if path == '/health':
+                    self._respond(200, {'status': 'healthy', 'api_version': '2.0', 'dashboard': True})
+                elif path == '/signals':
                     # Return aggregated signals for executor
                     signals = orchestrator.get_actionable_signals()
                     self._respond(200, {
@@ -390,12 +529,71 @@ class CloudRunnerV2:
             def _respond(self, code: int, data: dict):
                 self.send_response(code)
                 self.send_header('Content-Type', 'application/json')
+                # CORS headers for dashboard access
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+                self.send_header('Access-Control-Allow-Headers', 'Content-Type')
                 self.end_headers()
                 self.wfile.write(json.dumps(data).encode())
+            
+            def do_OPTIONS(self):
+                """Handle CORS preflight requests"""
+                self.send_response(200)
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
+                self.send_header('Access-Control-Allow-Headers', 'Content-Type')
+                self.end_headers()
+            
+            def _stream_events(self):
+                """Server-Sent Events endpoint for real-time updates"""
+                from api.websocket import SSEClient
+                import time as t
+                
+                self.send_response(200)
+                self.send_header('Content-Type', 'text/event-stream')
+                self.send_header('Cache-Control', 'no-cache')
+                self.send_header('Access-Control-Allow-Origin', '*')
+                self.send_header('Connection', 'keep-alive')
+                self.end_headers()
+                
+                # Create SSE client and register with live feed
+                client = SSEClient()
+                live_feed.add_client(client)
+                
+                try:
+                    # Send initial snapshot
+                    snapshot = json.dumps(live_feed.get_snapshot())
+                    self.wfile.write(f"event: snapshot\ndata: {snapshot}\n\n".encode())
+                    self.wfile.flush()
+                    
+                    # Stream events
+                    while runner_ref.running:
+                        message = client.get(timeout=1.0)
+                        if message:
+                            self.wfile.write(f"event: update\ndata: {message}\n\n".encode())
+                            self.wfile.flush()
+                        else:
+                            # Send keepalive
+                            self.wfile.write(f": keepalive\n\n".encode())
+                            self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                finally:
+                    client.disconnect()
+                    live_feed.remove_client(client)
         
         def run_server():
             server = HTTPServer(('0.0.0.0', self.port), SignalHandler)
             logger.info(f"🌐 HTTP server started on port {self.port}")
+            logger.info(f"📊 Bloomberg Dashboard API available at:")
+            logger.info(f"   GET /api/portfolio    - Portfolio overview")
+            logger.info(f"   GET /api/positions    - Open positions")
+            logger.info(f"   GET /api/trades       - Trade history")
+            logger.info(f"   GET /api/strategies   - Strategy performance")
+            logger.info(f"   GET /api/signals      - Signal history")
+            logger.info(f"   GET /api/risk         - Risk metrics")
+            logger.info(f"   GET /api/chart/:sym   - OHLCV data")
+            logger.info(f"   GET /api/summary      - Quick dashboard summary")
             while self.running:
                 server.handle_request()
         
