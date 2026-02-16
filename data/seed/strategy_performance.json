@@ -1,0 +1,102 @@
+{
+  "bts-lynch": {
+    "trades": 44,
+    "wins": 16,
+    "losses": 28,
+    "total_pnl": -33.48999999999998,
+    "win_rate": 0.36363636363636365,
+    "avg_pnl": -0.7611363636363632,
+    "max_win": 20.77,
+    "max_loss": -19.33
+  },
+  "cucurbit": {
+    "trades": 203,
+    "wins": 97,
+    "losses": 106,
+    "total_pnl": 4240.599999999999,
+    "win_rate": 0.47783251231527096,
+    "avg_pnl": 20.88965517241379,
+    "max_win": 504.89,
+    "max_loss": -87.61
+  },
+  "livermore": {
+    "trades": 3,
+    "wins": 2,
+    "losses": 1,
+    "total_pnl": 19.650000000000002,
+    "win_rate": 0.6666666666666666,
+    "avg_pnl": 6.550000000000001,
+    "max_win": 22.35,
+    "max_loss": -4.95
+  },
+  "mean-reversion": {
+    "trades": 4,
+    "wins": 2,
+    "losses": 2,
+    "total_pnl": 7.859999999999999,
+    "win_rate": 0.5,
+    "avg_pnl": 1.9649999999999999,
+    "max_win": 8.25,
+    "max_loss": -1.18
+  },
+  "stat-arb": {
+    "trades": 14,
+    "wins": 5,
+    "losses": 9,
+    "total_pnl": 1.400000000000001,
+    "win_rate": 0.35714285714285715,
+    "avg_pnl": 0.10000000000000007,
+    "max_win": 11.56,
+    "max_loss": -6.8
+  },
+  "synced": {
+    "trades": 23,
+    "wins": 13,
+    "losses": 10,
+    "total_pnl": 87.75000000000001,
+    "win_rate": 0.5652173913043478,
+    "avg_pnl": 3.8152173913043486,
+    "max_win": 31.72,
+    "max_loss": -28.66
+  },
+  "trend-following": {
+    "trades": 48,
+    "wins": 22,
+    "losses": 26,
+    "total_pnl": 205.93999999999997,
+    "win_rate": 0.4583333333333333,
+    "avg_pnl": 4.290416666666666,
+    "max_win": 21.68,
+    "max_loss": -11.33
+  },
+  "turtle": {
+    "trades": 1,
+    "wins": 1,
+    "losses": 0,
+    "total_pnl": 29.59,
+    "win_rate": 1,
+    "avg_pnl": 29.59,
+    "max_win": 29.59,
+    "max_loss": 29.59
+  },
+  "weinstein": {
+    "trades": 21,
+    "wins": 7,
+    "losses": 14,
+    "total_pnl": 29.7,
+    "win_rate": 0.3333333333333333,
+    "avg_pnl": 1.4142857142857141,
+    "max_win": 13.25,
+    "max_loss": -2.84
+  },
+  "zweig": {
+    "trades": 6,
+    "wins": 1,
+    "losses": 5,
+    "total_pnl": -13.04,
+    "win_rate": 0.16666666666666666,
+    "avg_pnl": -2.1733333333333333,
+    "max_win": 16.72,
+    "max_loss": -8.74
+  }
+}

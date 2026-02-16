@@ -112,6 +112,13 @@ class CloudRunnerV2:
         """Start all components"""
         self.running = True
         
+        # Initialize data from seed if needed (survives Railway restarts)
+        try:
+            from scripts.init_data import init_data
+            init_data()
+        except Exception as e:
+            logger.warning(f"Could not init seed data: {e}")
+        
         logger.info("=" * 60)
         logger.info("💰 CASH TOWN v2 - LEARNING-FIRST TRADING")
         logger.info("=" * 60)
