@@ -8,6 +8,7 @@ Key improvements:
 4. Integrates reflection for self-improvement
 5. Tracks what would have happened with rejected signals
 6. SECOND CHANCE LOGIC: Rescues promising signals that were initially rejected
+7. RISK MANAGER: All signals pass through centralized risk controls
 """
 import json
 import os
@@ -19,6 +20,8 @@ from pathlib import Path
 
 from .signal_aggregator import SignalAggregator, AggregatorConfig, AggregatedSignal
 from .second_chance import SecondChanceEvaluator
+from .risk_manager import RiskManager, RiskConfig, create_risk_manager
+from .profit_watchdog import ProfitWatchdog
 from agents.base import Signal, SignalSide
 
 logger = logging.getLogger(__name__)
@@ -60,9 +63,10 @@ class SmartOrchestrator:
     1. Selects the best signals using aggregation
     2. Learns from past decisions
     3. Tracks counterfactuals for rejected signals
+    4. ALL signals pass through RiskManager before execution
     """
     
-    def __init__(self, config: AggregatorConfig = None):
+    def __init__(self, config: AggregatorConfig = None, risk_config: RiskConfig = None):
         # Learning-first: no arbitrary limits. Let the bot learn what works.
         # Limits emerge from data, not assumptions.
         self.aggregator = SignalAggregator(config or AggregatorConfig(
@@ -95,6 +99,16 @@ class SmartOrchestrator:
         
         # Track rescued signals stats
         self.rescue_stats = {'total_rescued': 0, 'rescued_wins': 0, 'rescued_losses': 0}
+        
+        # RISK MANAGER: Centralized risk control
+        self.risk_manager = create_risk_manager(equity=0.0)
+        if risk_config:
+            self.risk_manager.config = risk_config
+        logger.info("🛡️ RiskManager integrated with SmartOrchestrator")
+        
+        # PROFIT WATCHDOG: The self-improving feedback loop
+        self.watchdog = ProfitWatchdog(orchestrator=self)
+        logger.info("🐕 ProfitWatchdog integrated with SmartOrchestrator")
     
     def receive_signal(self, strategy_id: str, signal_data: dict):
         """Receive a signal from a strategy agent"""
@@ -125,6 +139,7 @@ class SmartOrchestrator:
         """
         Process raw signals and return only the best ones for execution.
         Also logs all signals for learning and applies SECOND CHANCE logic.
+        ALL SIGNALS PASS THROUGH RISK MANAGER CHECKS.
         """
         if not self.raw_signals:
             return []
@@ -135,8 +150,44 @@ class SmartOrchestrator:
             k: v.get('score', 0) for k, v in self.strategy_performance.items()
         })
         
+        # Sync risk manager positions
+        self.risk_manager.positions = {
+            symbol: self.risk_manager.positions.get(symbol)
+            for symbol in self.positions
+            if symbol in self.risk_manager.positions
+        }
+        
         # Aggregate signals (first pass)
         aggregated = self.aggregator.aggregate(self.raw_signals)
+        
+        # RISK FILTER: Pass all aggregated signals through risk manager
+        risk_approved = []
+        for sig in aggregated:
+            can_trade, reason = self.risk_manager.can_open_position(
+                sig.symbol, sig.side.value, sig.signal.strategy_id
+            )
+            if can_trade:
+                # Calculate optimal position size
+                stop_loss = sig.signal.stop_loss or sig.signal.price * 0.98
+                size, meta = self.risk_manager.calculate_position_size(
+                    symbol=sig.symbol,
+                    price=sig.signal.price,
+                    side=sig.side.value,
+                    stop_loss=stop_loss,
+                    strategy_id=sig.signal.strategy_id,
+                    base_confidence=sig.adjusted_confidence
+                )
+                if size > 0:
+                    sig.signal.metadata['risk_approved'] = True
+                    sig.signal.metadata['risk_position_size'] = size
+                    sig.signal.metadata['risk_meta'] = meta
+                    risk_approved.append(sig)
+                else:
+                    logger.info(f"🛡️ Risk blocked {sig.symbol}: {meta.get('reason', 'size too small')}")
+            else:
+                logger.info(f"🛡️ Risk blocked {sig.symbol}: {reason}")
+        
+        aggregated = risk_approved
         selected_symbols = {s.symbol for s in aggregated}
         
         # ==========================================
@@ -206,7 +257,7 @@ class SmartOrchestrator:
         return aggregated
     
     def _log_all_signals(self, selected: List[AggregatedSignal]):
-        """Log all signals (selected and rejected) for learning"""
+        """Log all signals (selected and rejected) for learning + WATCHDOG tracking"""
         selected_symbols = {s.symbol for s in selected}
         
         # Log selected signals
@@ -227,11 +278,26 @@ class SmartOrchestrator:
                 consensus_score=agg.consensus_score
             )
             self._save_signal_record(record)
+            
+            # WATCHDOG: Record accepted decision
+            self.watchdog.record_decision(
+                signal_data={
+                    'strategy_id': agg.signal.strategy_id,
+                    'symbol': agg.symbol,
+                    'side': agg.side.value,
+                    'confidence': agg.signal.confidence,
+                    'price': agg.signal.price,
+                    'stop_loss': agg.signal.stop_loss,
+                    'take_profit': agg.signal.take_profit,
+                },
+                accepted=True
+            )
         
         # Log rejected signals for counterfactual analysis
         for strategy_id, signals in self.raw_signals.items():
             for signal in signals:
                 if signal.symbol not in selected_symbols:
+                    rejection_reason = self._get_rejection_reason(signal)
                     record = SignalRecord(
                         timestamp=datetime.utcnow().isoformat(),
                         strategy_id=strategy_id,
@@ -243,7 +309,7 @@ class SmartOrchestrator:
                         take_profit=signal.take_profit,
                         reason=signal.reason,
                         was_selected=False,
-                        selection_reason=self._get_rejection_reason(signal),
+                        selection_reason=rejection_reason,
                         aggregated_rank=None,
                         consensus_score=None
                     )
@@ -251,6 +317,21 @@ class SmartOrchestrator:
                     
                     # Add to counterfactual tracking
                     self.pending_counterfactual.append(record)
+                    
+                    # WATCHDOG: Record rejected decision
+                    self.watchdog.record_decision(
+                        signal_data={
+                            'strategy_id': strategy_id,
+                            'symbol': signal.symbol,
+                            'side': signal.side.value,
+                            'confidence': signal.confidence,
+                            'price': signal.price,
+                            'stop_loss': signal.stop_loss,
+                            'take_profit': signal.take_profit,
+                        },
+                        accepted=False,
+                        rejection_reason=rejection_reason
+                    )
     
     def _get_rejection_reason(self, signal: Signal) -> str:
         """Determine why a signal was rejected"""
@@ -272,7 +353,7 @@ class SmartOrchestrator:
     
     def record_trade_result(self, symbol: str, side: str, pnl: float, 
                            pnl_pct: float, strategy_id: str, reason: str,
-                           was_rescued: bool = False):
+                           was_rescued: bool = False, exit_price: float = 0.0):
         """Record a completed trade for learning"""
         record = {
             'timestamp': datetime.utcnow().isoformat(),
@@ -303,6 +384,39 @@ class SmartOrchestrator:
         
         # Update strategy performance
         self._update_strategy_performance(strategy_id, pnl > 0, pnl_pct)
+        
+        # Update risk manager with trade result
+        if exit_price > 0:
+            self.risk_manager.close_position(symbol, exit_price, reason)
+    
+    def update_equity(self, equity: float):
+        """Update account equity in risk manager"""
+        self.risk_manager.update_equity(equity)
+    
+    def register_position(self, symbol: str, side: str, size: float, 
+                         entry_price: float, stop_loss: float, strategy_id: str):
+        """Register a new position with risk manager"""
+        self.risk_manager.register_position(
+            symbol=symbol,
+            side=side,
+            size=size,
+            entry_price=entry_price,
+            stop_loss=stop_loss,
+            strategy_id=strategy_id
+        )
+        self.positions[symbol] = side
+    
+    def update_volatility(self, symbol: str, prices: List[float]):
+        """Update volatility data for risk manager"""
+        self.risk_manager.update_volatility(symbol, prices)
+    
+    def get_risk_status(self) -> Dict:
+        """Get risk manager status"""
+        return self.risk_manager.get_status()
+    
+    def can_trade(self) -> tuple[bool, str]:
+        """Check if trading is allowed (circuit breaker check)"""
+        return self.risk_manager.circuit_breaker.can_trade()
     
     def _update_strategy_performance(self, strategy_id: str, won: bool, pnl_pct: float):
         """Update strategy performance tracking with dynamic multiplier calculation"""
@@ -434,6 +548,7 @@ class SmartOrchestrator:
                 'winning_patterns': len(self.second_chance.winning_patterns),
                 'pending_near_misses': len(self.second_chance.near_miss_signals),
             },
+            'risk_manager': self.risk_manager.get_status(),
             'data_files': {
                 'signals': str(SIGNALS_LOG),
                 'trades': str(TRADES_LOG),

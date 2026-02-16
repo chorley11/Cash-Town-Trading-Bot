@@ -15,6 +15,7 @@ from dataclasses import asdict
 from .registry import AgentRegistry, AgentConfig
 from .health import HealthMonitor
 from .position_manager import PositionManager, RotationConfig, TrackedPosition, PositionState
+from .profit_watchdog import ProfitWatchdog, run_watchdog_cycle
 
 logging.basicConfig(
     level=logging.INFO,
@@ -32,9 +33,13 @@ class Orchestrator:
         self.running = False
         self._health_thread = None
         self._rotation_thread = None
+        self._watchdog_thread = None
         
         # Pending signals from agents waiting for capital
         self.pending_signals = []
+        
+        # PROFIT WATCHDOG: The feedback loop that maximizes profits
+        self.watchdog = ProfitWatchdog(orchestrator=self)
     
     def start(self):
         """Start the orchestrator"""
@@ -51,6 +56,10 @@ class Orchestrator:
         # Start position rotation loop
         self._rotation_thread = threading.Thread(target=self._rotation_loop, daemon=True)
         self._rotation_thread.start()
+        
+        # Start watchdog loop (runs every 5 minutes)
+        self._watchdog_thread = threading.Thread(target=self._watchdog_loop, daemon=True)
+        self._watchdog_thread.start()
     
     def stop(self):
         """Stop the orchestrator"""
@@ -102,6 +111,67 @@ class Orchestrator:
                 if not self.running:
                     break
                 time.sleep(1)
+    
+    def _watchdog_loop(self):
+        """Profit watchdog loop - runs every 5 minutes"""
+        while self.running:
+            try:
+                # Get current prices for outcome tracking
+                current_prices = self._get_current_prices()
+                if current_prices:
+                    run_watchdog_cycle(self.watchdog, current_prices)
+            except Exception as e:
+                logger.error(f"Watchdog cycle error: {e}")
+            
+            # Run every 5 minutes
+            for _ in range(300):
+                if not self.running:
+                    break
+                time.sleep(1)
+    
+    def _get_current_prices(self) -> dict:
+        """Get current prices for all tracked symbols"""
+        try:
+            from execution.kucoin import KuCoinFuturesExecutor
+            executor = KuCoinFuturesExecutor()
+            if not executor.is_configured:
+                return {}
+            
+            prices = {}
+            # Get prices for positions and pending signals
+            symbols = set()
+            
+            # From positions
+            positions = executor.get_positions()
+            for pos in positions:
+                symbols.add(pos.symbol)
+            
+            # From pending signals
+            for sig in self.pending_signals:
+                if isinstance(sig, dict):
+                    symbols.add(sig.get('symbol', ''))
+                else:
+                    symbols.add(getattr(sig, 'symbol', ''))
+            
+            # From watchdog pending outcomes
+            for record in self.watchdog.pending_outcomes:
+                symbols.add(record.symbol)
+            
+            # Fetch prices
+            for symbol in symbols:
+                if not symbol:
+                    continue
+                try:
+                    ticker = executor.client.get_ticker(symbol)
+                    if ticker and 'price' in ticker:
+                        prices[symbol] = float(ticker['price'])
+                except:
+                    pass
+            
+            return prices
+        except Exception as e:
+            logger.debug(f"Could not fetch prices: {e}")
+            return {}
     
     def _sync_positions_from_agents(self):
         """Sync position data from agent health statuses"""
@@ -441,6 +511,36 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
             statuses = {k: asdict(v) for k, v in orch.health_monitor.get_all_statuses().items()}
             self._send_json({'statuses': statuses})
         
+        elif path == '/watchdog':
+            # Get profit watchdog status - full analysis
+            self._send_json(orch.watchdog.get_status())
+        
+        elif path == '/watchdog/decisions':
+            # Get recent decisions with outcomes
+            limit = 50
+            try:
+                from urllib.parse import parse_qs
+                query = parse_qs(parsed.query)
+                limit = int(query.get('limit', [50])[0])
+            except:
+                pass
+            self._send_json({'decisions': orch.watchdog.get_recent_decisions(limit)})
+        
+        elif path == '/watchdog/alerts':
+            # Get active watchdog alerts
+            alerts = orch.watchdog.generate_alerts()
+            self._send_json({'alerts': [asdict(a) for a in alerts]})
+        
+        elif path == '/watchdog/recommendations':
+            # Get parameter recommendations
+            recs = orch.watchdog.analyze_and_recommend()
+            self._send_json({'recommendations': [asdict(r) for r in recs]})
+        
+        elif path == '/watchdog/drift':
+            # Get strategy drift analysis
+            drifts = orch.watchdog.detect_strategy_drift()
+            self._send_json({'strategy_drift': [asdict(d) for d in drifts]})
+        
         elif path == '/trades':
             # Serve trade history from Obsidian vault
             trades = self._load_obsidian_trades()
@@ -587,6 +687,62 @@ class OrchestratorHandler(BaseHTTPRequestHandler):
                 self._send_json({'success': True, 'message': 'Signal received'}, 201)
             except KeyError as e:
                 self._send_error(f'Missing required field: {e}')
+            except Exception as e:
+                self._send_error(str(e))
+        
+        elif path == '/watchdog/record':
+            # Record a decision manually (for testing/debugging)
+            try:
+                data = self._read_body()
+                orch.watchdog.record_decision(
+                    signal_data=data.get('signal', data),
+                    accepted=data.get('accepted', False),
+                    rejection_reason=data.get('rejection_reason')
+                )
+                self._send_json({'success': True, 'message': 'Decision recorded'}, 201)
+            except Exception as e:
+                self._send_error(str(e))
+        
+        elif path == '/watchdog/tune':
+            # Trigger auto-tuning
+            try:
+                data = self._read_body()
+                dry_run = data.get('dry_run', True)
+                changes = orch.watchdog.auto_tune(dry_run=dry_run)
+                self._send_json({
+                    'success': True,
+                    'dry_run': dry_run,
+                    'changes': changes
+                })
+            except Exception as e:
+                self._send_error(str(e))
+        
+        elif path == '/watchdog/baseline':
+            # Update strategy baseline
+            try:
+                data = self._read_body()
+                orch.watchdog.update_baseline(
+                    strategy_id=data['strategy_id'],
+                    win_rate=data['win_rate'],
+                    trades=data['trades'],
+                    pnl=data.get('pnl', 0)
+                )
+                self._send_json({'success': True, 'message': 'Baseline updated'})
+            except KeyError as e:
+                self._send_error(f'Missing required field: {e}')
+            except Exception as e:
+                self._send_error(str(e))
+        
+        elif path == '/watchdog/cycle':
+            # Trigger a watchdog cycle manually
+            try:
+                current_prices = orch._get_current_prices()
+                status = run_watchdog_cycle(orch.watchdog, current_prices)
+                self._send_json({
+                    'success': True,
+                    'status': status,
+                    'prices_fetched': len(current_prices)
+                })
             except Exception as e:
                 self._send_error(str(e))
         

@@ -35,6 +35,10 @@ from orchestrator.signal_aggregator import AggregatorConfig
 from agents.runner import AgentRunner
 from agents.strategies import STRATEGY_REGISTRY
 
+# SECURITY & PERFORMANCE: Import validation and monitoring
+from utils.validation import validate_signal_data, validate_trade_result, redact_sensitive_data
+from utils.monitoring import get_monitor, PerformanceMonitor
+
 # Data directory for learning
 DATA_DIR = Path(os.environ.get('DATA_DIR', '/app/data'))
 DATA_DIR.mkdir(parents=True, exist_ok=True)
@@ -162,6 +166,17 @@ class CloudRunnerV2:
                 elif self.path == '/rescue_stats':
                     # Second-chance rescue statistics
                     self._respond(200, orchestrator.rescue_stats)
+                elif self.path == '/perf':
+                    # PERFORMANCE: Monitoring stats endpoint
+                    monitor = get_monitor()
+                    self._respond(200, monitor.get_stats())
+                elif self.path == '/risk':
+                    # Risk manager status
+                    self._respond(200, orchestrator.get_risk_status())
+                elif self.path == '/can_trade':
+                    # Check if trading is allowed (circuit breaker)
+                    can, reason = orchestrator.can_trade()
+                    self._respond(200, {'can_trade': can, 'reason': reason})
                 else:
                     self._respond(404, {'error': 'Not found'})
             
@@ -169,31 +184,66 @@ class CloudRunnerV2:
                 if self.path == '/signals':
                     # Receive signal from agent
                     content_length = int(self.headers.get('Content-Length', 0))
+                    
+                    # SECURITY: Limit request body size (prevent DoS)
+                    if content_length > 50000:  # 50KB max
+                        self._respond(413, {'error': 'Request too large'})
+                        return
+                    
                     body = self.rfile.read(content_length).decode('utf-8')
                     try:
                         data = json.loads(body)
-                        strategy_id = data.get('strategy_id', 'unknown')
-                        orchestrator.receive_signal(strategy_id, data)
+                        
+                        # SECURITY: Validate and sanitize input
+                        is_valid, error, sanitized = validate_signal_data(data)
+                        if not is_valid:
+                            logger.warning(f"Invalid signal rejected: {error}")
+                            self._respond(400, {'error': error})
+                            return
+                        
+                        strategy_id = sanitized.get('strategy_id', 'unknown')
+                        orchestrator.receive_signal(strategy_id, sanitized)
                         self._respond(200, {'status': 'received'})
+                    except json.JSONDecodeError as e:
+                        self._respond(400, {'error': f'Invalid JSON: {str(e)[:100]}'})
                     except Exception as e:
-                        self._respond(400, {'error': str(e)})
+                        logger.error(f"Signal processing error: {e}")
+                        self._respond(500, {'error': 'Internal error'})
+                        
                 elif self.path == '/trade_result':
                     # Record trade result for learning
                     content_length = int(self.headers.get('Content-Length', 0))
+                    
+                    # SECURITY: Limit request body size
+                    if content_length > 10000:  # 10KB max
+                        self._respond(413, {'error': 'Request too large'})
+                        return
+                    
                     body = self.rfile.read(content_length).decode('utf-8')
                     try:
                         data = json.loads(body)
+                        
+                        # SECURITY: Validate and sanitize input
+                        is_valid, error, sanitized = validate_trade_result(data)
+                        if not is_valid:
+                            logger.warning(f"Invalid trade result rejected: {error}")
+                            self._respond(400, {'error': error})
+                            return
+                        
                         orchestrator.record_trade_result(
-                            symbol=data['symbol'],
-                            side=data['side'],
-                            pnl=data['pnl'],
-                            pnl_pct=data['pnl_pct'],
-                            strategy_id=data['strategy_id'],
-                            reason=data.get('reason', '')
+                            symbol=sanitized['symbol'],
+                            side=sanitized['side'],
+                            pnl=sanitized['pnl'],
+                            pnl_pct=sanitized['pnl_pct'],
+                            strategy_id=sanitized['strategy_id'],
+                            reason=sanitized.get('reason', '')
                         )
                         self._respond(200, {'status': 'recorded'})
+                    except json.JSONDecodeError as e:
+                        self._respond(400, {'error': f'Invalid JSON: {str(e)[:100]}'})
                     except Exception as e:
-                        self._respond(400, {'error': str(e)})
+                        logger.error(f"Trade result processing error: {e}")
+                        self._respond(500, {'error': 'Internal error'})
                 else:
                     self._respond(404, {'error': 'Not found'})
             
@@ -291,17 +341,32 @@ class CloudRunnerV2:
             last_multiplier_update = 0  # Track when we last fetched multipliers
             MULTIPLIER_UPDATE_INTERVAL = 300  # Update multipliers every 5 minutes
             
+            # PERFORMANCE: Get global monitor
+            monitor = get_monitor()
+            gc_interval = 0  # Counter for periodic GC
+            
             while self.running:
+                # PERFORMANCE: Start cycle tracking
+                cycle_id = monitor.start_cycle()
+                signals_executed = 0
+                signals_received = 0
+                
                 try:
-                    # Get AGGREGATED signals (already filtered/ranked)
+                    # PERFORMANCE: Time signal fetch stage
+                    monitor.start_stage('fetch_signals')
                     resp = requests.get(f"{ORCHESTRATOR_URL}/signals", timeout=5)
+                    monitor.end_stage('fetch_signals')
+                    
                     if resp.status_code == 200:
                         data = resp.json()
                         signals = data.get('signals', [])
+                        signals_received = len(signals)
                         
                         if signals:
                             logger.info(f"📊 Received {len(signals)} aggregated signals")
                             
+                            # PERFORMANCE: Time execution stage
+                            monitor.start_stage('execute_signals')
                             for sig in signals:
                                 symbol = sig['symbol']
                                 
@@ -315,14 +380,18 @@ class CloudRunnerV2:
                                 
                                 # Execute
                                 self._execute_signal(engine, sig)
+                                signals_executed += 1
                                 last_signal_time[symbol] = now
+                            monitor.end_stage('execute_signals')
                     
-                    # Refresh state and update positions
+                    # PERFORMANCE: Time state refresh stage
+                    monitor.start_stage('refresh_state')
                     engine.refresh_state()
                     self.orchestrator.positions = {
                         p.symbol: 'long' if p.is_long else 'short'
                         for p in engine.positions.values()
                     }
+                    monitor.end_stage('refresh_state')
                     
                     # DYNAMIC MULTIPLIERS: Periodically update strategy position multipliers
                     now_ts = time.time()
@@ -337,10 +406,23 @@ class CloudRunnerV2:
                         except:
                             pass
                     
+                    # Record signal metrics
+                    monitor.record_signals(generated=signals_received, executed=signals_executed)
+                    
                 except requests.exceptions.ConnectionError:
                     pass
                 except Exception as e:
                     logger.error(f"Executor error: {e}")
+                    monitor.record_error(str(e))
+                
+                # PERFORMANCE: End cycle and get metrics
+                monitor.end_cycle()
+                
+                # PERFORMANCE: Periodic garbage collection (every 20 cycles)
+                gc_interval += 1
+                if gc_interval >= 20:
+                    monitor.force_gc()
+                    gc_interval = 0
                 
                 time.sleep(30)  # Check every 30 seconds (not 10)
                 
