@@ -61,11 +61,13 @@ class SmartOrchestrator:
     """
     
     def __init__(self, config: AggregatorConfig = None):
+        # Learning-first: no arbitrary limits. Let the bot learn what works.
+        # Limits emerge from data, not assumptions.
         self.aggregator = SignalAggregator(config or AggregatorConfig(
             min_confidence=0.55,
             min_consensus=1,
-            max_signals_per_cycle=3,
-            cooldown_minutes=30,  # Increased from 15
+            max_signals_per_cycle=99,   # Effectively unlimited - learn from results
+            cooldown_minutes=0,          # No cooldown - learn when re-entry is good/bad
         ))
         
         # Raw signals from strategies (cleared after processing)

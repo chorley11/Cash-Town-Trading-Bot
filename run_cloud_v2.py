@@ -67,12 +67,13 @@ class CloudRunnerV2:
         self.live_mode = live_mode
         self.running = False
         
-        # Smart orchestrator for signal selection
+        # Smart orchestrator - learning-first, no arbitrary limits
+        # The bot learns optimal behavior from P&L, not from my assumptions
         self.orchestrator = SmartOrchestrator(AggregatorConfig(
             min_confidence=0.55,
             min_consensus=1,
-            max_signals_per_cycle=3,  # Max 3 trades per cycle
-            cooldown_minutes=30,       # 30 min cooldown per symbol
+            max_signals_per_cycle=99,  # No limit - learn from results
+            cooldown_minutes=0,         # No cooldown - learn when re-entry works
         ))
         
         self.agent_threads = []
@@ -84,12 +85,11 @@ class CloudRunnerV2:
         self.running = True
         
         logger.info("=" * 60)
-        logger.info("💰 CASH TOWN v2 - INTELLIGENT TRADING")
+        logger.info("💰 CASH TOWN v2 - LEARNING-FIRST TRADING")
         logger.info("=" * 60)
         logger.info(f"Mode: {'🔴 LIVE' if self.live_mode else '📝 PAPER'}")
         logger.info(f"Port: {self.port}")
-        logger.info(f"Max signals/cycle: 3")
-        logger.info(f"Symbol cooldown: 30 min")
+        logger.info(f"Philosophy: MAKE MONEY. Learn from P&L, not rules.")
         logger.info(f"Data dir: {DATA_DIR}")
         logger.info("=" * 60)
         
