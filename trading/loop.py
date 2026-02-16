@@ -117,14 +117,16 @@ class TradingLoop:
         
         # Execution engine
         self.executor = KuCoinFuturesExecutor()
+        # FULL BLOODED MODE - no caps, Kelly decides
         self.execution = ExecutionEngine(
             executor=self.executor,
             risk_config=RiskConfig(
-                max_position_pct=2.0,
-                max_total_exposure_pct=20.0,
-                max_positions=5,
-                max_daily_loss_pct=5.0,
-                default_leverage=5
+                max_position_pct=100.0,  # No cap
+                max_total_exposure_pct=100.0,  # No cap
+                max_positions=50,  # Effectively unlimited
+                max_daily_loss_pct=15.0,  # Emergency only
+                default_leverage=10,
+                default_take_profit_pct=8.0
             ),
             mode=self.config.execution_mode
         )

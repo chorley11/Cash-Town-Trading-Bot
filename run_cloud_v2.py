@@ -657,11 +657,14 @@ class CloudRunnerV2:
             mode = ExecutionMode.LIVE if self.live_mode else ExecutionMode.PAPER
             kucoin = KuCoinFuturesExecutor()
             
+            # FULL BLOODED MODE - no caps, Kelly decides
             risk_config = RiskConfig(
-                max_position_pct=5.0,
-                max_total_exposure_pct=30.0,
-                max_daily_loss_pct=3.0,
-                max_positions=5
+                max_position_pct=100.0,  # No cap
+                max_total_exposure_pct=100.0,  # No cap
+                max_daily_loss_pct=15.0,  # Emergency only
+                max_positions=50,  # Effectively unlimited
+                default_leverage=10,
+                default_take_profit_pct=8.0
             )
             
             engine = ExecutionEngine(
