@@ -722,11 +722,11 @@ class CloudRunnerV2:
                             for sig in signals:
                                 symbol = sig['symbol']
                                 
-                                # Double-check we're not over-trading
+                                # Double-check we're not over-trading - REDUCED for full blooded mode
                                 now = datetime.utcnow()
                                 if symbol in last_signal_time:
                                     elapsed = (now - last_signal_time[symbol]).total_seconds()
-                                    if elapsed < 1800:  # 30 min minimum between same symbol
+                                    if elapsed < 300:  # 5 min minimum between same symbol (was 30 min)
                                         logger.info(f"  ⏳ Skipping {symbol} - traded {elapsed/60:.0f}m ago")
                                         continue
                                 
