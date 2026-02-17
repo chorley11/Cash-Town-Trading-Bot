@@ -320,11 +320,31 @@ class KuCoinFuturesExecutor:
         
         if result.get('code') == '200000':
             order_id = result.get('data', {}).get('orderId')
-            logger.info(f"Market order placed: {side} {size} {symbol} -> {order_id}")
+            logger.info(f"Market order placed: {side} {size} {symbol} @ {safe_leverage}x -> {order_id}")
             return order_id
-        else:
-            logger.error(f"Order failed: {result}")
-            return None
+        
+        # Handle leverage tier limits - KuCoin limits leverage based on position size
+        error_msg = result.get('msg', '')
+        if 'Leverage cannot exceed' in error_msg and result.get('code') == '300016':
+            import re
+            match = re.search(r'exceed (\d+)', error_msg)
+            if match:
+                max_tier_leverage = int(match.group(1))
+                if max_tier_leverage < safe_leverage:
+                    logger.warning(f"Position size tier limits leverage to {max_tier_leverage}x for {symbol}, retrying...")
+                    data['leverage'] = str(max_tier_leverage)
+                    data['clientOid'] = f"ct_{int(time.time()*1000)}_retry"
+                    retry_result = self._request('POST', '/api/v1/orders', data)
+                    if retry_result.get('code') == '200000':
+                        order_id = retry_result.get('data', {}).get('orderId')
+                        logger.info(f"Market order placed on retry: {side} {size} {symbol} @ {max_tier_leverage}x -> {order_id}")
+                        return order_id
+                    else:
+                        logger.error(f"Order failed on retry: {retry_result}")
+                        return None
+        
+        logger.error(f"Order failed: {result}")
+        return None
     
     def place_limit_order(self, symbol: str, side: str, size: float, price: float,
                          leverage: int = 5, reduce_only: bool = False,
@@ -353,11 +373,31 @@ class KuCoinFuturesExecutor:
         
         if result.get('code') == '200000':
             order_id = result.get('data', {}).get('orderId')
-            logger.info(f"Limit order placed: {side} {size} {symbol} @ {price} -> {order_id}")
+            logger.info(f"Limit order placed: {side} {size} {symbol} @ {price} @ {safe_leverage}x -> {order_id}")
             return order_id
-        else:
-            logger.error(f"Order failed: {result}")
-            return None
+        
+        # Handle leverage tier limits
+        error_msg = result.get('msg', '')
+        if 'Leverage cannot exceed' in error_msg and result.get('code') == '300016':
+            import re
+            match = re.search(r'exceed (\d+)', error_msg)
+            if match:
+                max_tier_leverage = int(match.group(1))
+                if max_tier_leverage < safe_leverage:
+                    logger.warning(f"Position size tier limits leverage to {max_tier_leverage}x for {symbol}, retrying...")
+                    data['leverage'] = str(max_tier_leverage)
+                    data['clientOid'] = f"ct_{int(time.time()*1000)}_retry"
+                    retry_result = self._request('POST', '/api/v1/orders', data)
+                    if retry_result.get('code') == '200000':
+                        order_id = retry_result.get('data', {}).get('orderId')
+                        logger.info(f"Limit order placed on retry: {side} {size} {symbol} @ {price} @ {max_tier_leverage}x -> {order_id}")
+                        return order_id
+                    else:
+                        logger.error(f"Order failed on retry: {retry_result}")
+                        return None
+        
+        logger.error(f"Order failed: {result}")
+        return None
     
     def place_stop_order(self, symbol: str, side: str, size: float, 
                         stop_price: float, leverage: int = 5) -> Optional[str]:
