@@ -1,0 +1,457 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cash Town - Swarm Monitor</title>
+    <style>
+        :root {
+            --bg-primary: #0a0a12;
+            --bg-secondary: #12121a;
+            --bg-panel: #1a1a24;
+            --bg-hover: #252530;
+            --border: #2a2a3a;
+            --text-primary: #e8e8f0;
+            --text-secondary: #a0a0b0;
+            --text-muted: #606070;
+            --accent: #4a9eff;
+            --positive: #00c853;
+            --negative: #ff5252;
+            --warning: #ffc107;
+            --neutral: #888;
+        }
+        
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        
+        body {
+            font-family: 'SF Mono', 'Consolas', monospace;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            font-size: 12px;
+            line-height: 1.4;
+        }
+        
+        .header {
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border);
+            padding: 12px 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header h1 {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--accent);
+        }
+        
+        .header-nav a {
+            color: var(--text-secondary);
+            text-decoration: none;
+            margin-left: 20px;
+            font-size: 11px;
+        }
+        .header-nav a:hover { color: var(--accent); }
+        
+        .container {
+            display: grid;
+            grid-template-columns: 300px 1fr 350px;
+            gap: 16px;
+            padding: 16px;
+            height: calc(100vh - 60px);
+        }
+        
+        .panel {
+            background: var(--bg-panel);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+        
+        .panel-header {
+            background: var(--bg-secondary);
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--border);
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            color: var(--text-secondary);
+        }
+        
+        .panel-content {
+            padding: 12px;
+            overflow-y: auto;
+            max-height: calc(100vh - 140px);
+        }
+        
+        .agent-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 10px;
+            margin-bottom: 8px;
+        }
+        
+        .agent-name {
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: 6px;
+        }
+        
+        .agent-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            font-size: 10px;
+        }
+        
+        .stat-label { color: var(--text-muted); }
+        .stat-value { font-weight: 600; }
+        
+        .multiplier {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 10px;
+            font-weight: 600;
+        }
+        .multiplier.boost { background: rgba(0, 200, 83, 0.2); color: var(--positive); }
+        .multiplier.neutral { background: rgba(128, 128, 128, 0.2); color: var(--neutral); }
+        .multiplier.penalized { background: rgba(255, 82, 82, 0.2); color: var(--negative); }
+        
+        .signal-row {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 8px 10px;
+            margin-bottom: 6px;
+            font-size: 11px;
+        }
+        
+        .signal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 4px;
+        }
+        
+        .signal-symbol { font-weight: 600; }
+        .signal-side { font-size: 10px; padding: 2px 6px; border-radius: 3px; }
+        .signal-side.long { background: rgba(0, 200, 83, 0.2); color: var(--positive); }
+        .signal-side.short { background: rgba(255, 82, 82, 0.2); color: var(--negative); }
+        
+        .signal-status {
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 3px;
+        }
+        .signal-status.selected { background: rgba(74, 158, 255, 0.2); color: var(--accent); }
+        .signal-status.rejected { background: rgba(128, 128, 128, 0.2); color: var(--text-muted); }
+        .signal-status.rescued { background: rgba(255, 193, 7, 0.2); color: var(--warning); }
+        
+        .signal-reason {
+            color: var(--text-secondary);
+            font-size: 10px;
+            margin-top: 4px;
+        }
+        
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        
+        .metric-card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 4px;
+            padding: 12px;
+            text-align: center;
+        }
+        
+        .metric-value {
+            font-size: 24px;
+            font-weight: 600;
+            color: var(--accent);
+        }
+        
+        .metric-label {
+            font-size: 10px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            margin-top: 4px;
+        }
+        
+        .positive { color: var(--positive) !important; }
+        .negative { color: var(--negative) !important; }
+        .warning { color: var(--warning) !important; }
+        
+        .cf-row {
+            background: var(--bg-secondary);
+            border-left: 3px solid var(--warning);
+            padding: 8px 10px;
+            margin-bottom: 6px;
+            font-size: 11px;
+        }
+        
+        .status-dot {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+        .status-dot.active { background: var(--positive); }
+        .status-dot.inactive { background: var(--negative); }
+        
+        .last-update {
+            font-size: 10px;
+            color: var(--text-muted);
+            text-align: right;
+            padding: 8px;
+        }
+        
+        @media (max-width: 1200px) {
+            .container {
+                grid-template-columns: 1fr;
+            }
+            .panel-content {
+                max-height: 400px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <header class="header">
+        <h1>🧠 Cash Town Swarm Monitor</h1>
+        <nav class="header-nav">
+            <a href="/">← Trading Dashboard</a>
+            <span id="connection-status"><span class="status-dot active"></span>Live</span>
+        </nav>
+    </header>
+    
+    <div class="container">
+        <!-- Left Panel: Agents -->
+        <div class="panel">
+            <div class="panel-header">🤖 Strategy Agents</div>
+            <div class="panel-content" id="agents-list">
+                <div style="color: var(--text-muted);">Loading agents...</div>
+            </div>
+        </div>
+        
+        <!-- Center Panel: Signal Decisions -->
+        <div class="panel">
+            <div class="panel-header">📊 Recent Signal Decisions</div>
+            <div class="metrics-grid" id="decision-metrics">
+                <div class="metric-card">
+                    <div class="metric-value" id="selected-count">-</div>
+                    <div class="metric-label">Selected</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="rejected-count">-</div>
+                    <div class="metric-label">Rejected</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="rescued-count">-</div>
+                    <div class="metric-label">Rescued</div>
+                </div>
+                <div class="metric-card">
+                    <div class="metric-value" id="acceptance-rate">-</div>
+                    <div class="metric-label">Accept Rate</div>
+                </div>
+            </div>
+            <div class="panel-content" id="signals-list" style="max-height: calc(100vh - 280px);">
+                <div style="color: var(--text-muted);">Loading signals...</div>
+            </div>
+        </div>
+        
+        <!-- Right Panel: Learning & Counterfactuals -->
+        <div class="panel">
+            <div class="panel-header">🎓 Learning & Counterfactuals</div>
+            <div class="panel-content" id="learning-panel">
+                <div style="color: var(--text-muted);">Loading learning data...</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="last-update">Last update: <span id="last-update">--:--:--</span></div>
+
+    <script>
+        const API_BASE = window.location.origin;
+        let state = {};
+        
+        async function fetchData() {
+            try {
+                const response = await fetch(`${API_BASE}/api/swarm`);
+                const data = await response.json();
+                if (data.success) {
+                    state = data.data;
+                    updateUI();
+                }
+            } catch (e) {
+                console.error('Fetch error:', e);
+            }
+        }
+        
+        function updateUI() {
+            updateAgents();
+            updateDecisions();
+            updateSignals();
+            updateLearning();
+            document.getElementById('last-update').textContent = new Date().toLocaleTimeString();
+        }
+        
+        function updateAgents() {
+            const container = document.getElementById('agents-list');
+            const activity = state.strategy_activity || {};
+            const multipliers = state.learning?.strategy_multipliers || {};
+            const agents = state.agents || [];
+            
+            container.innerHTML = agents.map(agent => {
+                const act = activity[agent] || { signals: 0, selected: 0, rejected: 0, rescued: 0 };
+                const mult = multipliers[agent] || { multiplier: 1.0, score: 0, total_pnl: 0 };
+                const multClass = mult.multiplier > 1 ? 'boost' : mult.multiplier < 1 ? 'penalized' : 'neutral';
+                const multText = mult.multiplier > 1 ? `+${((mult.multiplier - 1) * 100).toFixed(0)}%` : 
+                                 mult.multiplier < 1 ? `${((mult.multiplier - 1) * 100).toFixed(0)}%` : '0%';
+                
+                return `
+                    <div class="agent-card">
+                        <div class="agent-name">
+                            ${formatName(agent)}
+                            <span class="multiplier ${multClass}">${multText}</span>
+                        </div>
+                        <div class="agent-stats">
+                            <div>
+                                <div class="stat-label">Signals</div>
+                                <div class="stat-value">${act.signals}</div>
+                            </div>
+                            <div>
+                                <div class="stat-label">Selected</div>
+                                <div class="stat-value positive">${act.selected}</div>
+                            </div>
+                            <div>
+                                <div class="stat-label">Rescued</div>
+                                <div class="stat-value warning">${act.rescued}</div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function updateDecisions() {
+            const d = state.decisions || {};
+            document.getElementById('selected-count').textContent = d.selected_count || 0;
+            document.getElementById('rejected-count').textContent = d.rejected_count || 0;
+            document.getElementById('rescued-count').textContent = d.rescued_count || 0;
+            document.getElementById('acceptance-rate').textContent = 
+                (d.acceptance_rate || 0).toFixed(1) + '%';
+        }
+        
+        function updateSignals() {
+            const container = document.getElementById('signals-list');
+            const signals = (state.recent_signals || []).slice().reverse();
+            
+            if (signals.length === 0) {
+                container.innerHTML = '<div style="color: var(--text-muted);">No recent signals</div>';
+                return;
+            }
+            
+            container.innerHTML = signals.map(s => {
+                const statusClass = s.metadata?.rescued ? 'rescued' : s.was_selected ? 'selected' : 'rejected';
+                const statusText = s.metadata?.rescued ? 'RESCUED' : s.was_selected ? 'SELECTED' : 'REJECTED';
+                const sideClass = s.side?.toLowerCase() || 'long';
+                
+                return `
+                    <div class="signal-row">
+                        <div class="signal-header">
+                            <span>
+                                <span class="signal-symbol">${s.symbol?.replace('USDTM', '') || '?'}</span>
+                                <span class="signal-side ${sideClass}">${s.side?.toUpperCase() || '?'}</span>
+                            </span>
+                            <span class="signal-status ${statusClass}">${statusText}</span>
+                        </div>
+                        <div style="color: var(--text-muted); font-size: 10px;">
+                            ${s.strategy_id || 'unknown'} • ${(s.confidence * 100 || 0).toFixed(0)}% conf
+                            ${s.selection_reason ? ` • ${s.selection_reason}` : ''}
+                        </div>
+                        ${s.reason ? `<div class="signal-reason">${s.reason}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+        
+        function updateLearning() {
+            const container = document.getElementById('learning-panel');
+            const learning = state.learning || {};
+            const multipliers = learning.strategy_multipliers || {};
+            const cfs = learning.recent_counterfactuals || [];
+            
+            // Strategy performance summary
+            const perfHTML = Object.entries(multipliers)
+                .filter(([k, v]) => v.total_pnl !== 0 || v.wins > 0 || v.losses > 0)
+                .sort((a, b) => (b[1].total_pnl || 0) - (a[1].total_pnl || 0))
+                .map(([k, v]) => {
+                    const pnlClass = v.total_pnl >= 0 ? 'positive' : 'negative';
+                    return `
+                        <div style="display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid var(--border);">
+                            <span>${formatName(k)}</span>
+                            <span>
+                                <span class="${pnlClass}">$${(v.total_pnl || 0).toFixed(0)}</span>
+                                <span style="color: var(--text-muted); margin-left: 8px;">${v.wins || 0}W/${v.losses || 0}L</span>
+                            </span>
+                        </div>
+                    `;
+                }).join('');
+            
+            // Counterfactuals
+            const cfHTML = cfs.length > 0 ? cfs.slice(-5).map(cf => `
+                <div class="cf-row">
+                    <div><strong>${cf.symbol?.replace('USDTM', '') || '?'}</strong> ${cf.side?.toUpperCase() || '?'} (${cf.strategy_id || '?'})</div>
+                    <div style="color: var(--text-muted); margin-top: 4px;">
+                        Would have: <span class="${cf.would_have_won ? 'positive' : 'negative'}">
+                            ${cf.would_have_won ? 'WON' : 'LOST'} $${Math.abs(cf.potential_pnl || 0).toFixed(2)}
+                        </span>
+                    </div>
+                </div>
+            `).join('') : '<div style="color: var(--text-muted);">No counterfactual data yet</div>';
+            
+            container.innerHTML = `
+                <div style="margin-bottom: 16px;">
+                    <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 8px;">
+                        Strategy Performance (Learning)
+                    </div>
+                    ${perfHTML || '<div style="color: var(--text-muted);">No performance data yet</div>'}
+                </div>
+                <div>
+                    <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 8px;">
+                        Recent Counterfactuals (What-If)
+                    </div>
+                    ${cfHTML}
+                </div>
+                <div style="margin-top: 16px; padding: 12px; background: var(--bg-secondary); border-radius: 4px;">
+                    <div style="font-size: 10px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 8px;">
+                        Pending Analysis
+                    </div>
+                    <div style="font-size: 18px; font-weight: 600;">
+                        ${learning.pending_counterfactuals || 0} signals
+                    </div>
+                    <div style="font-size: 10px; color: var(--text-muted);">
+                        Waiting for price check to evaluate rejected signals
+                    </div>
+                </div>
+            `;
+        }
+        
+        function formatName(id) {
+            return id.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+        }
+        
+        // Initial load and refresh every 5 seconds
+        fetchData();
+        setInterval(fetchData, 5000);
+    </script>
+</body>
+</html>

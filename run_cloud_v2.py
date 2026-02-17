@@ -373,6 +373,11 @@ class CloudRunnerV2:
                     })
                     return
                 
+                # GET /api/swarm - Swarm intelligence monitor
+                elif path == '/api/swarm':
+                    self._respond(200, dashboard_api.get_swarm())
+                    return
+                
                 # ===========================================
                 # ORIGINAL INTERNAL ENDPOINTS
                 # ===========================================

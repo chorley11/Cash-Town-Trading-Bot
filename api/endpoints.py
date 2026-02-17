@@ -1320,3 +1320,112 @@ class DashboardAPI:
             'profit_factor': round(profit_factor, 2),
             'sharpe_estimate': round(sharpe, 2)
         }
+    
+    def get_swarm(self) -> Dict:
+        """
+        GET /api/swarm
+        
+        Swarm intelligence monitor - shows agent learning and decisions.
+        Includes:
+        - Strategy performance multipliers (dynamic sizing)
+        - Recent signal decisions (selected vs rejected)
+        - Counterfactual analysis (what rejected signals would have done)
+        - Second chance rescues
+        - Agent status and learning state
+        """
+        try:
+            # Strategy multipliers from orchestrator
+            strategy_perf = {}
+            if self.orchestrator and hasattr(self.orchestrator, 'strategy_performance'):
+                strategy_perf = self.orchestrator.strategy_performance
+            
+            # Pending counterfactuals
+            pending_cf = []
+            if self.orchestrator and hasattr(self.orchestrator, 'pending_counterfactual'):
+                pending_cf = len(self.orchestrator.pending_counterfactual)
+            
+            # Load recent signals (last 100) from history
+            recent_signals = []
+            if SIGNALS_LOG.exists():
+                lines = SIGNALS_LOG.read_text().strip().split('\n')[-100:]
+                for line in lines:
+                    try:
+                        recent_signals.append(json.loads(line))
+                    except:
+                        pass
+            
+            # Load counterfactual results
+            counterfactuals = []
+            if COUNTERFACTUAL_LOG.exists():
+                lines = COUNTERFACTUAL_LOG.read_text().strip().split('\n')[-50:]
+                for line in lines:
+                    try:
+                        counterfactuals.append(json.loads(line))
+                    except:
+                        pass
+            
+            # Calculate learning insights
+            selected = [s for s in recent_signals if s.get('was_selected')]
+            rejected = [s for s in recent_signals if not s.get('was_selected')]
+            rescued = [s for s in selected if s.get('metadata', {}).get('rescued')]
+            
+            # Count by strategy
+            strategy_activity = {}
+            for s in recent_signals:
+                strat = s.get('strategy_id', 'unknown')
+                if strat not in strategy_activity:
+                    strategy_activity[strat] = {'signals': 0, 'selected': 0, 'rejected': 0, 'rescued': 0}
+                strategy_activity[strat]['signals'] += 1
+                if s.get('was_selected'):
+                    strategy_activity[strat]['selected'] += 1
+                    if s.get('metadata', {}).get('rescued'):
+                        strategy_activity[strat]['rescued'] += 1
+                else:
+                    strategy_activity[strat]['rejected'] += 1
+            
+            return APIResponse(
+                success=True,
+                data={
+                    'timestamp': datetime.utcnow().isoformat(),
+                    'learning': {
+                        'strategy_multipliers': {
+                            k: {
+                                'multiplier': v.get('multiplier', 1.0),
+                                'score': v.get('score', 0),
+                                'wins': v.get('wins', 0),
+                                'losses': v.get('losses', 0),
+                                'total_pnl': v.get('total_pnl', 0)
+                            } for k, v in strategy_perf.items()
+                        },
+                        'pending_counterfactuals': pending_cf,
+                        'recent_counterfactuals': counterfactuals[-10:]
+                    },
+                    'decisions': {
+                        'recent_signals_count': len(recent_signals),
+                        'selected_count': len(selected),
+                        'rejected_count': len(rejected),
+                        'rescued_count': len(rescued),
+                        'acceptance_rate': len(selected) / len(recent_signals) * 100 if recent_signals else 0
+                    },
+                    'strategy_activity': strategy_activity,
+                    'recent_signals': recent_signals[-20:],  # Last 20 for display
+                    'agents': [
+                        'trend-following', 'mean-reversion', 'turtle', 'weinstein',
+                        'livermore', 'bts-lynch', 'zweig', 'rsi-divergence',
+                        'funding-fade', 'oi-divergence', 'liquidation-hunter',
+                        'volatility-breakout', 'correlation-pairs'
+                    ]
+                },
+                metadata={
+                    'description': 'Swarm intelligence monitor',
+                    'help': 'Shows agent learning, signal decisions, and counterfactual analysis'
+                }
+            ).to_dict()
+            
+        except Exception as e:
+            logger.error(f"Error getting swarm data: {e}")
+            return APIResponse(
+                success=False,
+                data=None,
+                metadata={'error': str(e)}
+            ).to_dict()
