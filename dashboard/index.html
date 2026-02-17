@@ -928,7 +928,11 @@
                 // Update state from new API
                 state.connected = true;
                 state.signals = signals?.data || [];
-                state.strategies = strategies?.data || {};
+                // Convert strategies array to object keyed by strategy_id
+                state.strategies = (strategies?.data || []).reduce((acc, s) => {
+                    acc[s.strategy_id] = s;
+                    return acc;
+                }, {});
                 state.risk = risk?.data || {};
                 state.canTrade = !risk?.data?.circuit_breaker?.is_triggered ?? true;
                 state.canTradeReason = risk?.data?.circuit_breaker?.trigger_reason || '';
@@ -1179,7 +1183,7 @@
             strategies.sort((a, b) => (b[1].total_pnl || 0) - (a[1].total_pnl || 0));
             
             container.innerHTML = strategies.map(([id, s]) => {
-                const winRate = s.total_trades > 0 ? (s.wins / s.total_trades * 100) : 0;
+                const winRate = s.win_rate || (s.trades > 0 ? (s.wins / s.trades * 100) : 0);
                 const pnlClass = (s.total_pnl || 0) >= 0 ? 'positive' : 'negative';
                 
                 return `
@@ -1192,7 +1196,7 @@
                             </div>
                             <div>
                                 <div class="strategy-stat-label">TRADES</div>
-                                <div>${s.total_trades || 0}</div>
+                                <div>${s.trades || s.total_trades || 0}</div>
                             </div>
                             <div>
                                 <div class="strategy-stat-label">WIN%</div>
