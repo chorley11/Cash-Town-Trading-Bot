@@ -68,6 +68,7 @@ class KuCoinFuturesExecutor:
         self.api_key = None
         self.api_secret = None
         self.api_passphrase = None
+        self._contract_cache = {}  # Cache for contract details (maxLeverage, etc.)
         self._load_credentials()
     
     def _load_credentials(self):
@@ -165,6 +166,68 @@ class KuCoinFuturesExecutor:
         result = self._request('GET', '/api/v1/account-overview?currency=USDT')
         return result.get('data', {})
     
+    def get_contract_details(self, symbol: str) -> Dict:
+        """
+        Get contract details including maxLeverage. Results are cached.
+        
+        Args:
+            symbol: Trading pair (e.g., 'XBTUSDTM')
+            
+        Returns:
+            Contract details dict with maxLeverage, multiplier, etc.
+        """
+        if symbol in self._contract_cache:
+            return self._contract_cache[symbol]
+        
+        try:
+            # Public endpoint - no auth needed
+            url = f"{self.BASE_URL}/api/v1/contracts/{symbol}"
+            response = requests.get(url, timeout=10)
+            result = response.json()
+            
+            if result.get('code') == '200000':
+                contract = result.get('data', {})
+                self._contract_cache[symbol] = contract
+                logger.info(f"Cached contract details for {symbol}: maxLeverage={contract.get('maxLeverage')}")
+                return contract
+            else:
+                logger.warning(f"Could not fetch contract details for {symbol}: {result}")
+                return {}
+        except Exception as e:
+            logger.error(f"Error fetching contract details for {symbol}: {e}")
+            return {}
+    
+    def get_max_leverage(self, symbol: str) -> int:
+        """
+        Get the maximum allowed leverage for a symbol.
+        
+        Args:
+            symbol: Trading pair (e.g., 'XBTUSDTM')
+            
+        Returns:
+            Max leverage (defaults to 5 if unknown)
+        """
+        contract = self.get_contract_details(symbol)
+        max_lev = contract.get('maxLeverage', 5)
+        return int(max_lev) if max_lev else 5
+    
+    def get_safe_leverage(self, symbol: str, desired_leverage: int) -> int:
+        """
+        Get the safe leverage to use (min of desired and max allowed).
+        
+        Args:
+            symbol: Trading pair
+            desired_leverage: The leverage we want to use
+            
+        Returns:
+            Safe leverage that won't exceed symbol's max
+        """
+        max_lev = self.get_max_leverage(symbol)
+        safe_lev = min(desired_leverage, max_lev)
+        if safe_lev < desired_leverage:
+            logger.info(f"Capped leverage for {symbol}: {desired_leverage}x -> {safe_lev}x (max: {max_lev}x)")
+        return safe_lev
+    
     def get_positions(self) -> List[Position]:
         """Get all open positions"""
         result = self._request('GET', '/api/v1/positions')
@@ -229,7 +292,7 @@ class KuCoinFuturesExecutor:
             symbol: Trading pair (e.g., 'XBTUSDTM')
             side: 'buy' or 'sell'
             size: Position size in contracts
-            leverage: Leverage to use
+            leverage: Leverage to use (will be capped at symbol's max)
             reduce_only: If True, only reduces existing position
             margin_mode: 'ISOLATED' or 'CROSS'
         
@@ -239,8 +302,8 @@ class KuCoinFuturesExecutor:
         # Set margin mode first (handles 330005 error)
         self.set_margin_mode(symbol, margin_mode)
         
-        # Note: Leverage is set per-order, not via risk-limit-level API
-        # The risk-limit-level API is for position size tiers, not leverage
+        # Cap leverage at symbol's maximum to avoid API errors
+        safe_leverage = self.get_safe_leverage(symbol, leverage)
         
         data = {
             'clientOid': f"ct_{int(time.time()*1000)}",
@@ -248,7 +311,7 @@ class KuCoinFuturesExecutor:
             'side': side,
             'type': 'market',
             'size': int(size),
-            'leverage': str(leverage),
+            'leverage': str(safe_leverage),
             'reduceOnly': reduce_only,
             'marginMode': margin_mode
         }
@@ -270,6 +333,9 @@ class KuCoinFuturesExecutor:
         # Set margin mode first (handles 330005 error)
         self.set_margin_mode(symbol, margin_mode)
         
+        # Cap leverage at symbol's maximum
+        safe_leverage = self.get_safe_leverage(symbol, leverage)
+        
         data = {
             'clientOid': f"ct_{int(time.time()*1000)}",
             'symbol': symbol,
@@ -277,7 +343,7 @@ class KuCoinFuturesExecutor:
             'type': 'limit',
             'price': str(price),
             'size': int(size),
-            'leverage': str(leverage),
+            'leverage': str(safe_leverage),
             'reduceOnly': reduce_only,
             'postOnly': post_only,
             'marginMode': margin_mode
@@ -296,13 +362,16 @@ class KuCoinFuturesExecutor:
     def place_stop_order(self, symbol: str, side: str, size: float, 
                         stop_price: float, leverage: int = 5) -> Optional[str]:
         """Place a stop market order"""
+        # Cap leverage at symbol's maximum
+        safe_leverage = self.get_safe_leverage(symbol, leverage)
+        
         data = {
             'clientOid': f"ct_stop_{int(time.time()*1000)}",
             'symbol': symbol,
             'side': side,
             'type': 'market',
             'size': int(size),
-            'leverage': str(leverage),
+            'leverage': str(safe_leverage),
             'stop': 'down' if side == 'sell' else 'up',
             'stopPriceType': 'TP',  # Trade price
             'stopPrice': str(stop_price),

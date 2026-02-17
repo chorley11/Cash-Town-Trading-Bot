@@ -687,7 +687,7 @@ class CloudRunnerV2:
                 max_total_exposure_pct=50.0,  # Max 50% total exposure
                 max_daily_loss_pct=10.0,  # 10% daily loss limit
                 max_positions=50,  # Effectively unlimited
-                default_leverage=5,  # Safe default - some symbols cap at 5x
+                default_leverage=10,  # Executor auto-caps to symbol's maxLeverage
                 default_stop_loss_pct=2.0,  # 2% stop loss required
                 default_take_profit_pct=8.0
             )
