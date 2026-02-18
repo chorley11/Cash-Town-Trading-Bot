@@ -2,12 +2,11 @@
 Trailing Stop Manager - Automatically adjusts stop losses as positions profit
 
 Logic:
-1. When position is +1% profitable: Move stop to breakeven
-2. When position is +2% profitable: Move stop to +1%
-3. When position is +3% profitable: Move stop to +2%
-4. Continue trailing at 1% behind current price
+1. When position is +5% profitable: Move stop to breakeven
+2. When position is +10% profitable: Start trailing at 1% behind current price
+3. Continue trailing as price moves in our favor
 
-This locks in profits while letting winners run.
+This lets winners run to +10% before locking in profits with tight trailing stops.
 """
 import logging
 from dataclasses import dataclass
@@ -46,8 +45,8 @@ class TrailingStopManager:
         self.positions: Dict[str, TrailingStopState] = {}
         
         # Thresholds for moving stops
-        self.breakeven_threshold = 1.0  # Move to breakeven at +1%
-        self.trail_start_threshold = 2.0  # Start trailing at +2%
+        self.breakeven_threshold = 5.0  # Move to breakeven at +5%
+        self.trail_start_threshold = 10.0  # Start trailing at +10%
         
         logger.info(f"TrailingStopManager initialized: trail={trail_distance_pct}%")
     
