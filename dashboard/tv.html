@@ -137,6 +137,53 @@
             position: relative;
         }
         
+        .entry-overlay {
+            position: absolute;
+            top: 60px;
+            left: 12px;
+            z-index: 100;
+            background: rgba(22, 27, 34, 0.95);
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            padding: 12px 16px;
+            font-size: 13px;
+            backdrop-filter: blur(8px);
+            min-width: 200px;
+        }
+        
+        .entry-overlay.long {
+            border-left: 3px solid #3fb950;
+        }
+        
+        .entry-overlay.short {
+            border-left: 3px solid #f85149;
+        }
+        
+        .entry-overlay-title {
+            font-weight: 600;
+            font-size: 16px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .entry-overlay-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 4px 0;
+            color: #8b949e;
+        }
+        
+        .entry-overlay-row span:last-child {
+            color: #e6edf3;
+            font-family: 'SF Mono', Monaco, monospace;
+            font-weight: 500;
+        }
+        
+        .entry-overlay-row.pnl span:last-child.positive { color: #3fb950; }
+        .entry-overlay-row.pnl span:last-child.negative { color: #f85149; }
+        
         .position-panel {
             width: 320px;
             background: #161b22;
@@ -223,6 +270,7 @@
             border: 1px solid #30363d;
             border-radius: 8px;
             overflow: hidden;
+            position: relative;
         }
         
         .grid-card-header {
@@ -233,9 +281,38 @@
             border-bottom: 1px solid #30363d;
         }
         
+        .grid-card-info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        
+        .grid-card-entry {
+            font-size: 11px;
+            color: #8b949e;
+            font-family: 'SF Mono', Monaco, monospace;
+        }
+        
         .grid-card-chart {
             height: 250px;
+            position: relative;
         }
+        
+        .grid-entry-badge {
+            position: absolute;
+            top: 8px;
+            left: 8px;
+            z-index: 100;
+            background: rgba(22, 27, 34, 0.9);
+            border: 1px solid #30363d;
+            border-radius: 4px;
+            padding: 6px 10px;
+            font-size: 11px;
+            font-family: 'SF Mono', Monaco, monospace;
+        }
+        
+        .grid-entry-badge.long { border-left: 2px solid #3fb950; }
+        .grid-entry-badge.short { border-left: 2px solid #f85149; }
         
         .view-toggle {
             display: flex;
@@ -343,6 +420,10 @@
                     // Auto-select first position
                     if (positions.length > 0 && !activeSymbol) {
                         selectPosition(positions[0].symbol);
+                    } else if (activeSymbol) {
+                        // Refresh overlay if position still exists
+                        const pos = positions.find(p => p.symbol === activeSymbol);
+                        if (pos) updateEntryOverlay(pos);
                     }
                 }
             } catch (error) {
@@ -373,6 +454,45 @@
             const pnlEl = document.getElementById('totalPnl');
             pnlEl.textContent = `${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(2)}`;
             pnlEl.className = `stat-value ${totalPnl >= 0 ? 'positive' : 'negative'}`;
+        }
+        
+        function updateEntryOverlay(position) {
+            let overlay = document.getElementById('entryOverlay');
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.id = 'entryOverlay';
+                overlay.className = 'entry-overlay';
+                document.getElementById('chartContainer').appendChild(overlay);
+            }
+            
+            overlay.className = `entry-overlay ${position.side}`;
+            overlay.innerHTML = `
+                <div class="entry-overlay-title">
+                    ${position.side === 'long' ? '🟢' : '🔴'} ${position.symbol.replace('USDTM', '')} ${position.side.toUpperCase()}
+                </div>
+                <div class="entry-overlay-row">
+                    <span>Entry Price</span>
+                    <span>$${position.entry_price}</span>
+                </div>
+                <div class="entry-overlay-row">
+                    <span>Current</span>
+                    <span>$${position.current_price}</span>
+                </div>
+                <div class="entry-overlay-row">
+                    <span>Size</span>
+                    <span>${position.size.toLocaleString()} @ ${position.leverage}x</span>
+                </div>
+                <div class="entry-overlay-row pnl">
+                    <span>PnL</span>
+                    <span class="${position.unrealized_pnl >= 0 ? 'positive' : 'negative'}">
+                        ${position.unrealized_pnl >= 0 ? '+' : ''}$${position.unrealized_pnl.toFixed(2)} (${position.unrealized_pnl_pct}%)
+                    </span>
+                </div>
+                <div class="entry-overlay-row">
+                    <span>Liquidation</span>
+                    <span style="color: #f85149;">$${position.liquidation_price}</span>
+                </div>
+            `;
         }
         
         function selectPosition(symbol) {
@@ -426,10 +546,10 @@
             document.getElementById('positionDetails').innerHTML = detailsHtml;
             
             // Load TradingView chart
-            loadChart(symbol);
+            loadChart(symbol, position);
         }
         
-        function loadChart(symbol, containerId = 'chartContainer') {
+        function loadChart(symbol, position, containerId = 'chartContainer') {
             const container = document.getElementById(containerId);
             container.innerHTML = '';
             
@@ -453,6 +573,11 @@
                 "hide_volume": false,
                 "studies": ["RSI@tv-basicstudies", "MACD@tv-basicstudies"]
             });
+            
+            // Add entry overlay after chart loads
+            if (position) {
+                setTimeout(() => updateEntryOverlay(position), 500);
+            }
         }
         
         function setView(view) {
@@ -475,15 +600,24 @@
             container.innerHTML = positions.map((p, i) => `
                 <div class="grid-card">
                     <div class="grid-card-header">
-                        <div>
-                            <span style="font-weight: 600;">${p.symbol.replace('USDTM', '')}</span>
-                            <span class="chip-side ${p.side}" style="margin-left: 8px;">${p.side.toUpperCase()}</span>
+                        <div class="grid-card-info">
+                            <div>
+                                <span style="font-weight: 600;">${p.symbol.replace('USDTM', '')}</span>
+                                <span class="chip-side ${p.side}" style="margin-left: 8px;">${p.side.toUpperCase()}</span>
+                            </div>
+                            <div class="grid-card-entry">
+                                Entry: $${p.entry_price} • ${p.leverage}x • ${p.size.toLocaleString()} contracts
+                            </div>
                         </div>
                         <span class="chip-pnl ${p.unrealized_pnl >= 0 ? 'positive' : 'negative'}">
                             ${p.unrealized_pnl >= 0 ? '+' : ''}$${p.unrealized_pnl.toFixed(2)}
                         </span>
                     </div>
-                    <div class="grid-card-chart" id="gridChart${i}"></div>
+                    <div class="grid-card-chart" id="gridChart${i}">
+                        <div class="grid-entry-badge ${p.side}">
+                            Entry: $${p.entry_price}
+                        </div>
+                    </div>
                 </div>
             `).join('');
             
