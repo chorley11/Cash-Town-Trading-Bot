@@ -102,7 +102,9 @@ class ExecutionEngine:
         self.mode = mode
         
         # State tracking
-        self.account_balance: float = 0.0
+        self.account_balance: float = 0.0  # marginBalance from KuCoin
+        self.account_equity: float = 0.0   # accountEquity from KuCoin (includes unrealized)
+        self.available_balance: float = 0.0  # availableBalance from KuCoin (free funds)
         self.positions: Dict[str, Position] = {}
         self.pending_orders: Dict[str, Dict] = {}
         self.execution_history: List[ExecutionResult] = []
@@ -124,9 +126,14 @@ class ExecutionEngine:
             return
         
         try:
-            # Get account balance
+            # Get account balance - use marginBalance (actual cash), NOT availableBalance
+            # availableBalance = free funds only (excludes margin)
+            # marginBalance = actual deposited funds
+            # accountEquity = marginBalance + unrealizedPnL
             overview = self.executor.get_account_overview()
-            self.account_balance = float(overview.get('availableBalance', 0))
+            self.account_balance = float(overview.get('marginBalance', 0))
+            self.account_equity = float(overview.get('accountEquity', 0))
+            self.available_balance = float(overview.get('availableBalance', 0))
             
             # Get positions
             positions = self.executor.get_positions()
@@ -506,6 +513,8 @@ class ExecutionEngine:
             'killed': self.killed,
             'kill_reason': self.kill_reason,
             'account_balance': self.account_balance,
+            'account_equity': self.account_equity,
+            'available_balance': self.available_balance,
             'positions': len(self.positions),
             'daily_stats': {
                 'date': str(self.daily_stats.date),

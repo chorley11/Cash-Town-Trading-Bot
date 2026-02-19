@@ -137,16 +137,22 @@ class DashboardAPI:
         if self.executor:
             try:
                 status = self.executor.get_status()
-                balance = status.get('account_balance', 0)
                 positions = self.executor.positions
                 
-                # Calculate equity components
+                # Use actual KuCoin values - no manual calculation needed
+                # account_equity = total value (marginBalance + unrealizedPnL)
+                # account_balance = marginBalance (cash without unrealized)
+                # available_balance = free funds (not locked in margin)
+                total_equity = status.get('account_equity', 0)
+                margin_balance = status.get('account_balance', 0)
+                available = status.get('available_balance', 0)
+                
                 unrealized_pnl = sum(p.unrealized_pnl for p in positions.values())
                 margin_used = sum(p.margin for p in positions.values())
-                total_equity = balance + unrealized_pnl
                 
-                response['equity']['total'] = total_equity
-                response['equity']['available'] = balance - margin_used
+                # Use KuCoin's actual values
+                response['equity']['total'] = total_equity if total_equity > 0 else (margin_balance + unrealized_pnl)
+                response['equity']['available'] = available
                 response['equity']['margin_used'] = margin_used
                 
                 # Calculate P&L
