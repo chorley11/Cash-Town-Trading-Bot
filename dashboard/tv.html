@@ -1,0 +1,519 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cash Town | TradingView Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            background: #0d1117;
+            color: #e6edf3;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+            min-height: 100vh;
+        }
+        
+        .header {
+            background: linear-gradient(135deg, #161b22 0%, #0d1117 100%);
+            border-bottom: 1px solid #30363d;
+            padding: 16px 24px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header h1 {
+            font-size: 24px;
+            font-weight: 600;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        
+        .header h1::before {
+            content: '💰';
+            font-size: 28px;
+        }
+        
+        .stats-bar {
+            display: flex;
+            gap: 32px;
+        }
+        
+        .stat {
+            text-align: right;
+        }
+        
+        .stat-label {
+            font-size: 11px;
+            color: #8b949e;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .stat-value {
+            font-size: 20px;
+            font-weight: 600;
+            font-family: 'SF Mono', Monaco, monospace;
+        }
+        
+        .stat-value.positive { color: #3fb950; }
+        .stat-value.negative { color: #f85149; }
+        
+        .last-update {
+            font-size: 11px;
+            color: #8b949e;
+        }
+        
+        .positions-summary {
+            background: #161b22;
+            border-bottom: 1px solid #30363d;
+            padding: 12px 24px;
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+        
+        .position-chip {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            background: #21262d;
+            border: 1px solid #30363d;
+            border-radius: 6px;
+            padding: 8px 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .position-chip:hover {
+            border-color: #58a6ff;
+            background: #1c2128;
+        }
+        
+        .position-chip.active {
+            border-color: #58a6ff;
+            background: #1c2128;
+        }
+        
+        .position-chip.long { border-left: 3px solid #3fb950; }
+        .position-chip.short { border-left: 3px solid #f85149; }
+        
+        .chip-symbol {
+            font-weight: 600;
+            font-size: 13px;
+        }
+        
+        .chip-side {
+            font-size: 10px;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-weight: 500;
+        }
+        
+        .chip-side.long { background: rgba(63, 185, 80, 0.2); color: #3fb950; }
+        .chip-side.short { background: rgba(248, 81, 73, 0.2); color: #f85149; }
+        
+        .chip-pnl {
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 12px;
+        }
+        
+        .chip-pnl.positive { color: #3fb950; }
+        .chip-pnl.negative { color: #f85149; }
+        
+        .main-content {
+            display: flex;
+            height: calc(100vh - 140px);
+        }
+        
+        .chart-container {
+            flex: 1;
+            position: relative;
+        }
+        
+        .position-panel {
+            width: 320px;
+            background: #161b22;
+            border-left: 1px solid #30363d;
+            overflow-y: auto;
+        }
+        
+        .position-detail {
+            padding: 16px;
+            border-bottom: 1px solid #30363d;
+        }
+        
+        .position-detail h3 {
+            font-size: 14px;
+            color: #8b949e;
+            margin-bottom: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .detail-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #21262d;
+        }
+        
+        .detail-row:last-child {
+            border-bottom: none;
+        }
+        
+        .detail-label {
+            color: #8b949e;
+            font-size: 13px;
+        }
+        
+        .detail-value {
+            font-family: 'SF Mono', Monaco, monospace;
+            font-size: 13px;
+            font-weight: 500;
+        }
+        
+        .detail-value.positive { color: #3fb950; }
+        .detail-value.negative { color: #f85149; }
+        .detail-value.long { color: #3fb950; }
+        .detail-value.short { color: #f85149; }
+        
+        .loading {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            color: #8b949e;
+        }
+        
+        .error-banner {
+            background: rgba(248, 81, 73, 0.1);
+            border: 1px solid #f85149;
+            color: #f85149;
+            padding: 12px 24px;
+            text-align: center;
+            display: none;
+        }
+        
+        .grid-view {
+            display: none;
+            padding: 16px;
+            gap: 16px;
+            grid-template-columns: repeat(auto-fill, minmax(400px, 1fr));
+            overflow-y: auto;
+            height: calc(100vh - 140px);
+        }
+        
+        .grid-view.active {
+            display: grid;
+        }
+        
+        .main-content.hidden {
+            display: none;
+        }
+        
+        .grid-card {
+            background: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        .grid-card-header {
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #30363d;
+        }
+        
+        .grid-card-chart {
+            height: 250px;
+        }
+        
+        .view-toggle {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .view-btn {
+            background: #21262d;
+            border: 1px solid #30363d;
+            color: #8b949e;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+        
+        .view-btn.active {
+            background: #58a6ff;
+            color: #0d1117;
+            border-color: #58a6ff;
+        }
+        
+        .refresh-btn {
+            background: #238636;
+            border: none;
+            color: white;
+            padding: 6px 12px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            margin-left: 8px;
+        }
+        
+        .refresh-btn:hover {
+            background: #2ea043;
+        }
+    </style>
+</head>
+<body>
+    <div class="error-banner" id="errorBanner"></div>
+    
+    <div class="header">
+        <h1>Cash Town Positions</h1>
+        <div style="display: flex; align-items: center; gap: 24px;">
+            <div class="view-toggle">
+                <button class="view-btn active" onclick="setView('single')">Single Chart</button>
+                <button class="view-btn" onclick="setView('grid')">Grid View</button>
+                <button class="refresh-btn" onclick="loadPositions()">↻ Refresh</button>
+            </div>
+            <div class="stats-bar">
+                <div class="stat">
+                    <div class="stat-label">Positions</div>
+                    <div class="stat-value" id="positionCount">-</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Total PnL</div>
+                    <div class="stat-value" id="totalPnl">-</div>
+                </div>
+                <div class="stat">
+                    <div class="stat-label">Updated</div>
+                    <div class="last-update" id="lastUpdate">-</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="positions-summary" id="positionChips"></div>
+    
+    <div class="main-content" id="singleView">
+        <div class="chart-container" id="chartContainer">
+            <div class="loading">Select a position to view chart</div>
+        </div>
+        <div class="position-panel" id="positionPanel">
+            <div class="position-detail">
+                <h3>Position Details</h3>
+                <div id="positionDetails">
+                    <div class="loading">Select a position</div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="grid-view" id="gridView"></div>
+
+    <script src="https://s3.tradingview.com/tv.js"></script>
+    <script>
+        const API_BASE = 'https://web-production-63664b.up.railway.app';
+        let positions = [];
+        let activeSymbol = null;
+        let currentView = 'single';
+        let widgets = {};
+        
+        async function loadPositions() {
+            try {
+                const response = await fetch(`${API_BASE}/api/positions`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    positions = data.data;
+                    renderPositions();
+                    updateStats();
+                    document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+                    document.getElementById('errorBanner').style.display = 'none';
+                    
+                    // Auto-select first position
+                    if (positions.length > 0 && !activeSymbol) {
+                        selectPosition(positions[0].symbol);
+                    }
+                }
+            } catch (error) {
+                console.error('Failed to load positions:', error);
+                document.getElementById('errorBanner').textContent = 'Failed to connect to Cash Town API';
+                document.getElementById('errorBanner').style.display = 'block';
+            }
+        }
+        
+        function renderPositions() {
+            const container = document.getElementById('positionChips');
+            container.innerHTML = positions.map(p => `
+                <div class="position-chip ${p.side} ${activeSymbol === p.symbol ? 'active' : ''}" 
+                     onclick="selectPosition('${p.symbol}')">
+                    <span class="chip-symbol">${p.symbol.replace('USDTM', '')}</span>
+                    <span class="chip-side ${p.side}">${p.side.toUpperCase()}</span>
+                    <span class="chip-pnl ${p.unrealized_pnl >= 0 ? 'positive' : 'negative'}">
+                        ${p.unrealized_pnl >= 0 ? '+' : ''}$${p.unrealized_pnl.toFixed(2)}
+                    </span>
+                </div>
+            `).join('');
+        }
+        
+        function updateStats() {
+            document.getElementById('positionCount').textContent = positions.length;
+            
+            const totalPnl = positions.reduce((sum, p) => sum + p.unrealized_pnl, 0);
+            const pnlEl = document.getElementById('totalPnl');
+            pnlEl.textContent = `${totalPnl >= 0 ? '+' : ''}$${totalPnl.toFixed(2)}`;
+            pnlEl.className = `stat-value ${totalPnl >= 0 ? 'positive' : 'negative'}`;
+        }
+        
+        function selectPosition(symbol) {
+            activeSymbol = symbol;
+            renderPositions();
+            
+            const position = positions.find(p => p.symbol === symbol);
+            if (!position) return;
+            
+            // Update details panel
+            const detailsHtml = `
+                <div class="detail-row">
+                    <span class="detail-label">Symbol</span>
+                    <span class="detail-value">${position.symbol}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Side</span>
+                    <span class="detail-value ${position.side}">${position.side.toUpperCase()}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Size</span>
+                    <span class="detail-value">${position.size.toLocaleString()}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Entry Price</span>
+                    <span class="detail-value">$${position.entry_price}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Current Price</span>
+                    <span class="detail-value">$${position.current_price}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Leverage</span>
+                    <span class="detail-value">${position.leverage}x</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Margin</span>
+                    <span class="detail-value">$${position.margin.toFixed(2)}</span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Unrealized PnL</span>
+                    <span class="detail-value ${position.unrealized_pnl >= 0 ? 'positive' : 'negative'}">
+                        ${position.unrealized_pnl >= 0 ? '+' : ''}$${position.unrealized_pnl.toFixed(2)} (${position.unrealized_pnl_pct}%)
+                    </span>
+                </div>
+                <div class="detail-row">
+                    <span class="detail-label">Liquidation</span>
+                    <span class="detail-value negative">$${position.liquidation_price}</span>
+                </div>
+            `;
+            document.getElementById('positionDetails').innerHTML = detailsHtml;
+            
+            // Load TradingView chart
+            loadChart(symbol);
+        }
+        
+        function loadChart(symbol, containerId = 'chartContainer') {
+            const container = document.getElementById(containerId);
+            container.innerHTML = '';
+            
+            // Convert KuCoin symbol to TradingView format
+            const tvSymbol = `KUCOIN:${symbol}`;
+            
+            new TradingView.widget({
+                "autosize": true,
+                "symbol": tvSymbol,
+                "interval": "60",
+                "timezone": "Etc/UTC",
+                "theme": "dark",
+                "style": "1",
+                "locale": "en",
+                "toolbar_bg": "#161b22",
+                "enable_publishing": false,
+                "hide_side_toolbar": false,
+                "allow_symbol_change": true,
+                "container_id": containerId,
+                "hide_volume": false,
+                "studies": ["RSI@tv-basicstudies", "MACD@tv-basicstudies"]
+            });
+        }
+        
+        function setView(view) {
+            currentView = view;
+            document.querySelectorAll('.view-btn').forEach(btn => btn.classList.remove('active'));
+            event.target.classList.add('active');
+            
+            if (view === 'single') {
+                document.getElementById('singleView').classList.remove('hidden');
+                document.getElementById('gridView').classList.remove('active');
+            } else {
+                document.getElementById('singleView').classList.add('hidden');
+                document.getElementById('gridView').classList.add('active');
+                renderGridView();
+            }
+        }
+        
+        function renderGridView() {
+            const container = document.getElementById('gridView');
+            container.innerHTML = positions.map((p, i) => `
+                <div class="grid-card">
+                    <div class="grid-card-header">
+                        <div>
+                            <span style="font-weight: 600;">${p.symbol.replace('USDTM', '')}</span>
+                            <span class="chip-side ${p.side}" style="margin-left: 8px;">${p.side.toUpperCase()}</span>
+                        </div>
+                        <span class="chip-pnl ${p.unrealized_pnl >= 0 ? 'positive' : 'negative'}">
+                            ${p.unrealized_pnl >= 0 ? '+' : ''}$${p.unrealized_pnl.toFixed(2)}
+                        </span>
+                    </div>
+                    <div class="grid-card-chart" id="gridChart${i}"></div>
+                </div>
+            `).join('');
+            
+            // Load mini charts
+            positions.forEach((p, i) => {
+                setTimeout(() => {
+                    new TradingView.widget({
+                        "autosize": true,
+                        "symbol": `KUCOIN:${p.symbol}`,
+                        "interval": "60",
+                        "timezone": "Etc/UTC",
+                        "theme": "dark",
+                        "style": "1",
+                        "locale": "en",
+                        "toolbar_bg": "#161b22",
+                        "enable_publishing": false,
+                        "hide_side_toolbar": true,
+                        "hide_top_toolbar": true,
+                        "allow_symbol_change": false,
+                        "container_id": `gridChart${i}`,
+                        "hide_volume": true
+                    });
+                }, i * 200); // Stagger loading
+            });
+        }
+        
+        // Initial load
+        loadPositions();
+        
+        // Auto-refresh every 60 seconds
+        setInterval(loadPositions, 60000);
+    </script>
+</body>
+</html>
