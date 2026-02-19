@@ -19,6 +19,11 @@ from .liquidation_hunter import LiquidationHunterAgent
 from .volatility_breakout import VolatilityBreakoutAgent
 from .correlation_pairs import CorrelationPairsAgent
 
+# Ronin Trader strategies (ported Feb 2026)
+from .ronin_volume_spike import RoninVolumeSpikeAgent
+from .ronin_funding_fade import RoninFundingFadeAgent
+from .ronin_momentum_breakout import RoninMomentumBreakoutAgent
+
 __all__ = [
     # Original strategies
     'BTSLynchAgent',
@@ -36,6 +41,10 @@ __all__ = [
     'LiquidationHunterAgent',
     'VolatilityBreakoutAgent',
     'CorrelationPairsAgent',
+    # Ronin strategies
+    'RoninVolumeSpikeAgent',
+    'RoninFundingFadeAgent',
+    'RoninMomentumBreakoutAgent',
     'STRATEGY_REGISTRY',
 ]
 
@@ -57,4 +66,8 @@ STRATEGY_REGISTRY = {
     'liquidation-hunter': LiquidationHunterAgent,
     'volatility-breakout': VolatilityBreakoutAgent,
     'correlation-pairs': CorrelationPairsAgent,
+    # Ronin Trader strategies (ported Feb 2026)
+    'ronin-volume-spike': RoninVolumeSpikeAgent,
+    'ronin-funding-fade': RoninFundingFadeAgent,
+    'ronin-momentum-breakout': RoninMomentumBreakoutAgent,
 }
