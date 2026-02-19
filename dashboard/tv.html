@@ -433,8 +433,9 @@
             const container = document.getElementById(containerId);
             container.innerHTML = '';
             
-            // Convert KuCoin symbol to TradingView format
-            const tvSymbol = `KUCOIN:${symbol}`;
+            // Convert KuCoin symbol to Binance perps (better TradingView support)
+            const baseSymbol = symbol.replace('USDTM', '');
+            const tvSymbol = `BINANCE:${baseSymbol}USDT.P`;
             
             new TradingView.widget({
                 "autosize": true,
@@ -489,9 +490,10 @@
             // Load mini charts
             positions.forEach((p, i) => {
                 setTimeout(() => {
+                    const baseSymbol = p.symbol.replace('USDTM', '');
                     new TradingView.widget({
                         "autosize": true,
-                        "symbol": `KUCOIN:${p.symbol}`,
+                        "symbol": `BINANCE:${baseSymbol}USDT.P`,
                         "interval": "60",
                         "timezone": "Etc/UTC",
                         "theme": "dark",
