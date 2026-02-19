@@ -1,0 +1,105 @@
+{
+  "timestamp": "2026-02-19T09:16:51.321220+00:00",
+  "account": {
+    "currency": "USDT",
+    "accountEquity": 12995.371153682,
+    "unrealisedPNL": 681.99304,
+    "marginBalance": 12326.938599582,
+    "availableBalance": 7663.723731582,
+    "positionMargin": 5331.6474221,
+    "orderMargin": 0.0
+  },
+  "positions": [
+    {
+      "symbol": "OPUSDTM",
+      "side": "short",
+      "size": 115593.0,
+      "entry_price": 0.1474,
+      "mark_price": 0.142,
+      "liquidation_price": 0.1749,
+      "unrealized_pnl": 625.7319,
+      "unrealized_pnl_pct": 3.6700000000000004,
+      "leverage": 4.08,
+      "margin": 173.9905836,
+      "strategy": "manual"
+    },
+    {
+      "symbol": "NEARUSDTM",
+      "side": "long",
+      "size": 19420.0,
+      "entry_price": 1.011,
+      "mark_price": 1.008,
+      "liquidation_price": 0.815,
+      "unrealized_pnl": -5.826,
+      "unrealized_pnl_pct": -0.3,
+      "leverage": 5.05,
+      "margin": 14.8772736,
+      "strategy": "manual"
+    },
+    {
+      "symbol": "ATOMUSDTM",
+      "side": "short",
+      "size": 5850.0,
+      "entry_price": 2.322,
+      "mark_price": 2.305,
+      "liquidation_price": 2.756,
+      "unrealized_pnl": 9.9532,
+      "unrealized_pnl_pct": 0.73,
+      "leverage": 4.8,
+      "margin": 14.293305,
+      "strategy": "manual"
+    },
+    {
+      "symbol": "AVAXUSDTM",
+      "side": "long",
+      "size": 2101.0,
+      "entry_price": 8.83,
+      "mark_price": 8.83,
+      "liquidation_price": 7.12,
+      "unrealized_pnl": 0.0,
+      "unrealized_pnl_pct": 0.0,
+      "leverage": 5.0,
+      "margin": 14.0993908,
+      "strategy": "manual"
+    },
+    {
+      "symbol": "SOLUSDTM",
+      "side": "short",
+      "size": 55.0,
+      "entry_price": 84.627,
+      "mark_price": 81.635,
+      "liquidation_price": 100.752,
+      "unrealized_pnl": 16.456,
+      "unrealized_pnl_pct": 3.54,
+      "leverage": 4.11,
+      "margin": 3.412343,
+      "strategy": "manual"
+    },
+    {
+      "symbol": "ICPUSDTM",
+      "side": "short",
+      "size": 2063.0,
+      "entry_price": 2.348,
+      "mark_price": 2.2,
+      "liquidation_price": 2.786,
+      "unrealized_pnl": 3.05324,
+      "unrealized_pnl_pct": 6.3,
+      "leverage": 3.57,
+      "margin": 0.4810916,
+      "strategy": "manual"
+    },
+    {
+      "symbol": "APTUSDTM",
+      "side": "short",
+      "size": 6397.0,
+      "entry_price": 0.915,
+      "mark_price": 0.864,
+      "liquidation_price": 1.085,
+      "unrealized_pnl": 32.6247,
+      "unrealized_pnl_pct": 5.57,
+      "leverage": 3.7,
+      "margin": 5.85862848,
+      "strategy": "manual"
+    }
+  ]
+}
