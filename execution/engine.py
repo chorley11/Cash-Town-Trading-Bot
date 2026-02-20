@@ -115,7 +115,9 @@ class ExecutionEngine:
         self.kill_reason: Optional[str] = None
         
         # DRAWDOWN PROTECTION: Track peak balance for drawdown calculation
+        # Reset daily - drawdown is per-day, not all-time
         self.peak_balance: float = 0.0
+        self.peak_balance_date: date = date.today()
         self.in_drawdown_mode: bool = False
         self.drawdown_pct: float = 0.0
     
@@ -173,16 +175,26 @@ class ExecutionEngine:
     
     def _check_drawdown(self):
         """
-        DRAWDOWN PROTECTION: Monitor account drawdown from peak.
+        DRAWDOWN PROTECTION: Monitor account drawdown from DAILY peak.
+        Resets each day - we measure drawdown from day start, not all-time high.
         If drawdown exceeds threshold, reduce position sizes by factor.
         """
         total_equity = self.account_balance + sum(p.unrealized_pnl for p in self.positions.values())
         
-        # Update peak balance
+        # Reset peak at start of new day
+        today = date.today()
+        if self.peak_balance_date != today:
+            self.peak_balance = total_equity
+            self.peak_balance_date = today
+            self.in_drawdown_mode = False
+            self.drawdown_pct = 0.0
+            logger.info(f"📅 New day - daily peak reset to ${self.peak_balance:.2f}")
+        
+        # Update peak balance (only goes up during the day)
         if total_equity > self.peak_balance:
             self.peak_balance = total_equity
             if self.in_drawdown_mode:
-                logger.info(f"📈 Exited drawdown mode - new peak: ${self.peak_balance:.2f}")
+                logger.info(f"📈 Exited drawdown mode - new daily peak: ${self.peak_balance:.2f}")
             self.in_drawdown_mode = False
             self.drawdown_pct = 0.0
         
