@@ -166,6 +166,11 @@ class KuCoinFuturesExecutor:
         result = self._request('GET', '/api/v1/account-overview?currency=USDT')
         return result.get('data', {})
     
+    def get_ticker(self, symbol: str) -> Dict:
+        """Get current ticker/price for a symbol"""
+        result = self._request('GET', f'/api/v1/ticker?symbol={symbol}')
+        return result.get('data', {})
+    
     def get_contract_details(self, symbol: str) -> Dict:
         """
         Get contract details including maxLeverage. Results are cached.

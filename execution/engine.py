@@ -16,6 +16,7 @@ from enum import Enum
 
 from .kucoin import KuCoinFuturesExecutor, Position
 from .strategy_tracker import tracker as strategy_tracker
+from .trade_logger import log_trade
 from orchestrator.signal_aggregator import AggregatedSignal
 from agents.base import SignalSide
 
@@ -491,20 +492,54 @@ class ExecutionEngine:
             )
         
         elif self.mode == ExecutionMode.LIVE:
+            # Get current price BEFORE closing for accurate PnL
+            try:
+                ticker = self.executor.get_ticker(symbol)
+                exit_price = float(ticker.get('price', position.entry_price))
+            except Exception as e:
+                logger.warning(f"Could not get ticker for {symbol}: {e}")
+                exit_price = position.entry_price
+            
             success = self.executor.close_position(symbol)
             if success:
+                # Calculate realized PnL
+                if position.side == 'long':
+                    pnl = (exit_price - position.entry_price) * position.size / position.entry_price
+                else:
+                    pnl = (position.entry_price - exit_price) * position.size / position.entry_price
+                
+                # Get strategy info from tracker
+                tracked = strategy_tracker.positions.get(symbol)
+                strategy_id = tracked.strategy_id if tracked else 'unknown'
+                entry_time = tracked.entry_time if tracked else None
+                
+                # Log the trade to trades_history.jsonl
+                log_trade(
+                    symbol=symbol,
+                    side=position.side,
+                    entry_price=position.entry_price,
+                    exit_price=exit_price,
+                    size=position.size * position.entry_price,  # Notional value
+                    pnl=pnl,
+                    strategy_id=strategy_id,
+                    entry_time=entry_time,
+                    close_reason=reason,
+                    leverage=position.leverage
+                )
+                
                 del self.positions[symbol]
-                # Track strategy close
-                current_price = position.entry_price  # TODO: get actual close price
-                strategy_tracker.close_position(symbol, current_price, reason)
+                strategy_tracker.close_position(symbol, exit_price, reason)
+                
+                logger.info(f"💰 Closed {symbol} {position.side}: PnL=${pnl:+.2f}")
+            
             return ExecutionResult(
                 success=success,
                 order_id=None,
                 symbol=symbol,
                 side="close",
                 size=position.size,
-                price=position.entry_price,
-                message=f"Position closed: {reason}" if success else "Close failed"
+                price=exit_price if success else position.entry_price,
+                message=f"Position closed: {reason} (PnL=${pnl:+.2f})" if success else "Close failed"
             )
         
         return ExecutionResult(
